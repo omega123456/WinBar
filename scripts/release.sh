@@ -6,7 +6,7 @@ cd "$(dirname "$0")/.."
 
 PLIST=Info.plist
 BODY=.github/release-body.md
-DEFAULT_BODY="See the attached WinBar zip. Installed copies update themselves."
+DEFAULT_BODY="Open the WinBar .dmg and drag WinBar to Applications. Installed copies update themselves."
 pb() { /usr/libexec/PlistBuddy -c "$1" "$PLIST"; }
 die() { echo "[release] $*" >&2; exit 1; }
 

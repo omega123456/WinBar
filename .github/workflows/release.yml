@@ -88,8 +88,22 @@ jobs:
           VERSION: ${{ steps.version.outputs.version }}
         run: |
           set -euo pipefail
+          # Zip: what the in-app updater downloads.
           zip="WinBar-${VERSION}.zip"
           ditto -c -k --keepParent .build/WinBar.app "$zip"
+
+          # DMG: manual install (drag WinBar onto the Applications link).
+          dmg="WinBar-${VERSION}.dmg"
+          stage="$RUNNER_TEMP/dmg"
+          mkdir -p "$stage"
+          ditto .build/WinBar.app "$stage/WinBar.app"
+          ln -s /Applications "$stage/Applications"
+          for attempt in 1 2 3; do # hdiutil intermittently fails with "Resource busy" on hosted runners
+            hdiutil create -volname "WinBar ${VERSION}" -srcfolder "$stage" -format UDZO -ov "$dmg" && break
+            [ "$attempt" -lt 3 ] || exit 1
+            sleep 5
+          done
+
           notes=.github/release-body.md
-          [ -f "$notes" ] || { echo "See the attached WinBar-${VERSION}.zip." > "$RUNNER_TEMP/notes.md"; notes="$RUNNER_TEMP/notes.md"; }
-          gh release create "$GITHUB_REF_NAME" "$zip" --title "WinBar $GITHUB_REF_NAME" --notes-file "$notes"
+          [ -f "$notes" ] || { echo "Open WinBar-${VERSION}.dmg and drag WinBar to Applications." > "$RUNNER_TEMP/notes.md"; notes="$RUNNER_TEMP/notes.md"; }
+          gh release create "$GITHUB_REF_NAME" "$dmg" "$zip" --title "WinBar $GITHUB_REF_NAME" --notes-file "$notes"

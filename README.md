@@ -82,7 +82,7 @@ Rebuilding with `build-app.sh` keeps all of these grants, because the signing id
 
 ## Releases and updates
 
-WinBar checks GitHub Releases (`omega123456/WinBar`, which must be public) at launch and then every hour. When a newer version exists, it asks whether to update now. If you accept, it downloads the zip and installs it over `~/Applications/WinBar.app`, but only if the download is signed with the same "WinBar Local Signing" certificate. Then it relaunches. Right-click empty bar space for **Check for Updates…** and the **Automatic Updates** toggle.
+WinBar checks GitHub Releases (`omega123456/WinBar`, which must be public) at launch and then every hour. When a newer version exists, it asks whether to update now. If you accept, it downloads the zip and installs it over the running copy (wherever it is installed), but only if the download is signed with the same "WinBar Local Signing" certificate. Then it relaunches. Right-click empty bar space for **Check for Updates…** and the **Automatic Updates** toggle.
 
 To publish a release, run this in Terminal.app with a clean working tree:
 
@@ -90,7 +90,7 @@ To publish a release, run this in Terminal.app with a clean working tree:
 ./scripts/release.sh
 ```
 
-It bumps the version in `Info.plist`, writes the release notes to `.github/release-body.md`, runs a release build and the self-test, commits, tags `vX.Y.Z` and pushes. The tag triggers `.github/workflows/release.yml`, which builds on `macos-26`, signs with the same identity and attaches `WinBar-X.Y.Z.zip` to the release. A nightly workflow keeps only the newest 5 releases.
+It bumps the version in `Info.plist`, writes the release notes to `.github/release-body.md`, runs a release build and the self-test, commits, tags `vX.Y.Z` and pushes. The tag triggers `.github/workflows/release.yml`, which builds on `macos-26`, signs with the same identity and attaches `WinBar-X.Y.Z.dmg` (manual install: open it and drag WinBar to Applications) and `WinBar-X.Y.Z.zip` (used by the updater) to the release. The app is self-signed, so the first launch from a downloaded DMG is blocked by Gatekeeper: allow it once in System Settings → Privacy & Security → **Open Anyway**. A nightly workflow keeps only the newest 5 releases.
 
 One-time repository secrets:
 1. In Keychain Access, export "WinBar Local Signing" (certificate and private key) as a `.p12`. Then:
