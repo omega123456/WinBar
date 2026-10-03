@@ -56,6 +56,7 @@ struct Theme: Equatable {
     var tint: CGColor { rgb(0x1C1C1C, Self.tintAlpha) }
     var solidBackground: CGColor { rgb(0x202020) }
     var topBorder: CGColor { white(contrast ? 0.25 : 0.06) }
+    var divider: CGColor { white(contrast ? 0.25 : 0.15) } // pinned | other, owner-picked from 6–15% previews
     var text: CGColor { white(1) }
     var hover: CGColor { white(contrast ? 0.16 : 0.09) }
     var pressed: CGColor { white(0.05) }
@@ -197,6 +198,7 @@ final class TaskbarPanel: NSPanel {
         }
         pinned.forEach(place)
         if !pinned.isEmpty { x += Self.groupGap - Self.gap }
+        background.dividerX = pinned.isEmpty || rest.isEmpty ? nil : x - Self.groupGap / 2
         rest.forEach(place)
         groups = (pinned.map(\.key), other.map(\.key))
         layoutCTA(cta, x: x)
@@ -415,11 +417,13 @@ enum BarClickTap {
     }
 }
 
-/// Tint + 3% noise (or the solid Reduce Transparency colour) + 1 pt top border, drawn once per
-/// size/theme change. Also the target for right-clicks on empty bar space.
+/// Tint + 3% noise (or the solid Reduce Transparency colour) + 1 pt top border + the 1 × 24 pt divider
+/// centred in the pinned | other group gap, drawn once per size/theme/divider change. Also the target for
+/// right-clicks on empty bar space.
 final class BarBackgroundView: NSView {
     weak var panel: TaskbarPanel?
     var theme = Theme() { didSet { needsDisplay = true } }
+    var dividerX: CGFloat? { didSet { if dividerX != oldValue { needsDisplay = true } } }
 
     override init(frame: NSRect) {
         super.init(frame: frame)
@@ -445,6 +449,10 @@ final class BarBackgroundView: NSView {
         }
         ctx.setFillColor(theme.topBorder)
         ctx.fill(CGRect(x: 0, y: bounds.height - 1, width: bounds.width, height: 1))
+        if let dividerX {
+            ctx.setFillColor(theme.divider)
+            ctx.fill(CGRect(x: dividerX - 0.5, y: TaskbarPanel.rowMidY - 12, width: 1, height: 24))
+        }
         #if DEBUG
         let pill = CGRect(x: bounds.width - TaskbarPanel.edge - TaskbarPanel.devStampWidth, y: TaskbarPanel.rowMidY - 10,
                           width: TaskbarPanel.devStampWidth, height: 20)
