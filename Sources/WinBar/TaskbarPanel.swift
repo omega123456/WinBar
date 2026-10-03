@@ -15,10 +15,9 @@ enum Fonts {
     static let semibold = NSFont(name: "Selawik-Semibold", size: 12) ?? .systemFont(ofSize: 12, weight: .semibold)
 }
 
-/// Every colour of the bar, resolved once per appearance / accent / accessibility-option change
-/// (UI/UX Wireframes: background, state fills, indicators, Increase Contrast table).
+/// Every colour of the bar, resolved once per accent / accessibility-option change. One theme only: the
+/// Win11 dark taskbar, whatever the macOS light/dark setting (UI/UX Wireframes: dark column + Increase Contrast).
 struct Theme: Equatable {
-    var dark = false
     var contrast = false        // Increase Contrast
     var solid = false           // Reduce Transparency
     var reduceMotion = false
@@ -27,64 +26,54 @@ struct Theme: Equatable {
     /// Win11 acrylic recipe: blur → luminosity layer (keeps the backdrop's hue/saturation, replaces its
     /// lightness) → tint → noise. Here: `.fullScreenUI` blur, then a solid layer with the public Core Animation
     /// `luminosityBlendMode` compositing filter (verified live: CA blend filters blend with the effect view's
-    /// behind-window backdrop), then in light mode a `colorBurnBlendMode` grey layer, then the tint.
-    /// Colour burn with grey g gives 1 − (1 − c)/g: it scales every channel's distance from white by 1/g, so the
-    /// backdrop's chroma is amplified in proportion while neutrals stay neutral (a `saturationBlendMode` layer
-    /// was rejected: it turned white mint #E9FBF3 and warm grey yellow #FEF6D2). Luminosity alpha is 1 because
-    /// the old 0.8 let 20% of the dark blur through, which is what made the bar read as grey.
+    /// behind-window backdrop), then the tint. Luminosity alpha is 1: lower lets the blur's own lightness through.
     /// Calibration knobs (owner checkpoint C, retuned 2026-10-03). Measured on screen, macOS 26, stripes
-    /// white / black / #0050D0 / #20A040 / owner's wallpaper #253134 / #77AFB0 (the Win11 reference wallpaper,
-    /// whose taskbar samples #D2F4F3) / #C8C8C8:
-    ///   old light, lum #F3F3F3 @ 0.8:        #F3F5F4 / #E0E2E6 / #DFE8FB / #D7F4D8 / #DDE8E8 / #D8F5F7 / #EEF1F0
-    ///   light, lum #F6F6F6 @ 1 + burn #8C8C8C: #F0F3F3 / #EEF2F9 / #EDF2FF / #DEFDDF / #E3F7F7 / #D4FCFF / #EDF3F2
-    ///     → #1B1B1B text ≥ 14:1
-    ///   old dark, lum #202020 @ 1 + #1C1C1C @ 0.7: #262626 / #252628 / #192746 / #192F19 / #232728 / #1D2A2A
-    ///   dark, lum #202020 @ 1 + #1C1C1C @ 0.55:   #262728 / #25282A / #132955 / #103312 / #222A29 / #182D2E
-    /// A dark luminosity layer alone over-saturates (blue → #003085); the tint on top calms it.
-    static let lightLuminosityAlpha: CGFloat = 1
-    static let darkLuminosityAlpha: CGFloat = 1
-    static let lightTintAlpha: CGFloat = 0
-    static let darkTintAlpha: CGFloat = 0.55
+    /// white / black / #0050D0 / #20A040 / owner's wallpaper #253134 / #77AFB0:
+    ///   old, lum #202020 @ 1 + #1C1C1C @ 0.7: #262626 / #252628 / #192746 / #192F19 / #232728 / #1D2A2A
+    ///   lum #202020 @ 1 + #1C1C1C @ 0.55:      #262728 / #25282A / #132955 / #103312 / #222A29 / #182D2E
+    /// The 0.55 tint washed colour out (Calculator orange #FF9200 behind → #291D11; @ 0.2 → #321D08). Now no tint:
+    /// orange → #361D02, the most chroma the luminosity blend allows at this lightness, as on the Win11 dark
+    /// taskbar (owner's reference reds ~#46141A at the same luminance). Raise the tint to calm it again.
+    static let luminosityAlpha: CGFloat = 1
+    static let tintAlpha: CGFloat = 0
+    static let appearance = NSAppearance(named: .darkAqua)!
 
     static func current() -> Theme {
         let ws = NSWorkspace.shared
         var t = Theme()
-        t.dark = NSApp.effectiveAppearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
         t.contrast = ws.accessibilityDisplayShouldIncreaseContrast
         t.solid = ws.accessibilityDisplayShouldReduceTransparency
         t.reduceMotion = ws.accessibilityDisplayShouldReduceMotion
-        t.appearance.performAsCurrentDrawingAppearance {
+        appearance.performAsCurrentDrawingAppearance {
             if let c = NSColor.controlAccentColor.usingColorSpace(.sRGB)?.cgColor { t.accent = c }
         }
         return t
     }
 
-    var appearance: NSAppearance { NSAppearance(named: dark ? .darkAqua : .aqua)! }
+    var appearance: NSAppearance { Self.appearance }
 
-    var luminosity: CGColor { dark ? rgb(0x202020, Self.darkLuminosityAlpha) : rgb(0xF6F6F6, Self.lightLuminosityAlpha) }
-    /// colorBurnBlendMode layer (light only): ×1/0.55 chroma boost around white, see the recipe above.
-    var chromaBurn: CGColor? { dark ? nil : rgb(0x8C8C8C) }
-    var tint: CGColor { dark ? rgb(0x1C1C1C, Self.darkTintAlpha) : rgb(0xF3F3F3, Self.lightTintAlpha) }
-    var solidBackground: CGColor { dark ? rgb(0x202020) : rgb(0xF0F0F2) }
-    var topBorder: CGColor { contrast ? (dark ? white(0.25) : black(0.25)) : (dark ? white(0.06) : black(0.08)) }
-    var text: CGColor { dark ? white(1) : rgb(0x1B1B1B) }
-    var hover: CGColor { contrast ? (dark ? white(0.16) : white(0.70)) : (dark ? white(0.09) : white(0.45)) }
-    var pressed: CGColor { dark ? white(0.05) : white(0.30) }
-    var active: CGColor { dark ? white(contrast ? 0.24 : 0.15) : white(1) }
-    var activeHover: CGColor { dark ? white(contrast ? 0.24 : 0.18) : white(1) }
-    var activeEdge: CGColor { contrast ? (dark ? white(0.50) : black(0.40)) : (dark ? white(0.14) : black(0.12)) }
-    var activeShadowOpacity: Float { dark ? 0 : 0.08 }
-    var runIndicator: CGColor { contrast ? (dark ? white(0.80) : black(0.70)) : (dark ? white(0.55) : black(0.45)) }
+    var luminosity: CGColor { rgb(0x202020, Self.luminosityAlpha) }
+    var tint: CGColor { rgb(0x1C1C1C, Self.tintAlpha) }
+    var solidBackground: CGColor { rgb(0x202020) }
+    var topBorder: CGColor { white(contrast ? 0.25 : 0.06) }
+    var text: CGColor { white(1) }
+    var hover: CGColor { white(contrast ? 0.16 : 0.09) }
+    var pressed: CGColor { white(0.05) }
+    var active: CGColor { white(contrast ? 0.24 : 0.15) }
+    var activeHover: CGColor { white(contrast ? 0.24 : 0.18) }
+    var activeEdge: CGColor { white(contrast ? 0.50 : 0.14) }
+    var activeShadowOpacity: Float { 0 }
+    var runIndicator: CGColor { white(contrast ? 0.80 : 0.55) }
 
     // Signals and preview (UI/UX wireframes: Badges, Progress, Attention flashing, Hover preview)
-    var badge: CGColor { dark ? rgb(0xFF453A) : rgb(0xFF3B30) }
-    func progressFill(paused: Bool) -> CGColor { paused ? rgb(0xFFC800, dark ? 0.50 : 0.55) : rgb(0x06B025, dark ? 0.55 : 0.45) }
-    func progressLine(paused: Bool) -> CGColor { paused ? (dark ? rgb(0xFFC800) : rgb(0xE0A800)) : (dark ? rgb(0x2BD14C) : rgb(0x06B025)) }
-    var attentionPlate: CGColor { dark ? rgb(0x442726) : rgb(0xFDE7E9) }
-    var attentionEdge: CGColor { dark ? rgb(0xFF99A4, 0.2) : rgb(0xC42B1C, 0.2) }
-    var attentionIndicator: CGColor { dark ? rgb(0xFF99A4) : rgb(0xC42B1C) }
-    var flyout: CGColor { dark ? rgb(0x2C2C2C, solid ? 1 : 0.85) : rgb(0xF9F9F9, solid ? 1 : 0.85) }
-    var flyoutStroke: CGColor { dark ? white(0.09) : black(0.07) }
+    var badge: CGColor { rgb(0xFF453A) }
+    func progressFill(paused: Bool) -> CGColor { paused ? rgb(0xFFC800, 0.50) : rgb(0x06B025, 0.55) }
+    func progressLine(paused: Bool) -> CGColor { paused ? rgb(0xFFC800) : rgb(0x2BD14C) }
+    var attentionPlate: CGColor { rgb(0x442726) }
+    var attentionEdge: CGColor { rgb(0xFF99A4, 0.2) }
+    var attentionIndicator: CGColor { rgb(0xFF99A4) }
+    var flyout: CGColor { rgb(0x2C2C2C, solid ? 1 : 0.85) }
+    var flyoutStroke: CGColor { white(0.09) }
 }
 
 /// One bar: borderless non-activating panel at status-bar level, screen width × 48 pt at the bottom.
@@ -100,8 +89,7 @@ final class TaskbarPanel: NSPanel {
 
     weak var controller: BarController?
     private let effect = NSVisualEffectView()
-    private let luminosity = NSView() // luminosityBlendMode layer over the blur: see Theme.lightLuminosityAlpha
-    private let burn = NSView()       // colorBurnBlendMode chroma boost: see Theme.chromaBurn
+    private let luminosity = NSView() // luminosityBlendMode layer over the blur: see Theme.luminosityAlpha
     private let background = BarBackgroundView()
     private var buttons: [ItemKey: TaskbarButton] = [:]
     private var groups: (pinned: [ItemKey], other: [ItemKey]) = ([], [])
@@ -128,16 +116,14 @@ final class TaskbarPanel: NSPanel {
 
         let root = NSView(frame: NSRect(origin: .zero, size: frame.size))
         root.wantsLayer = true
-        for v in [effect, luminosity, burn, background] as [NSView] {
+        for v in [effect, luminosity, background] as [NSView] {
             v.frame = root.bounds
             v.autoresizingMask = [.width, .height]
             root.addSubview(v)
         }
         luminosity.wantsLayer = true
         luminosity.layer?.compositingFilter = "luminosityBlendMode"
-        burn.wantsLayer = true
-        burn.layer?.compositingFilter = "colorBurnBlendMode"
-        effect.material = .fullScreenUI   // least built-in fill: see Theme.lightLuminosityAlpha
+        effect.material = .fullScreenUI   // least built-in fill: see Theme.luminosityAlpha
         effect.blendingMode = .behindWindow
         effect.state = .active            // a never-key panel would otherwise render flat
         background.panel = self
@@ -165,8 +151,6 @@ final class TaskbarPanel: NSPanel {
         effect.isHidden = theme.solid
         luminosity.isHidden = theme.solid
         luminosity.layer?.backgroundColor = theme.luminosity
-        burn.isHidden = theme.solid || theme.chromaBurn == nil
-        burn.layer?.backgroundColor = theme.chromaBurn
         background.theme = theme
         if let ctaLabel { ctaLabel.textColor = NSColor(cgColor: theme.text) }
         ctaButton?.apply(theme)

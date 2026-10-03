@@ -149,7 +149,11 @@ final class TaskbarButton: NSView {
         plate.shadowPath = CGPath(roundedRect: b, cornerWidth: 4, cornerHeight: 4, transform: nil)
         let size: CGFloat = content.item == nil ? 16 : 24
         let iconX = showsLabel ? 8 : floor((b.width - size) / 2)
-        iconLayer.frame = CGRect(x: iconX, y: (b.height - size) / 2, width: size, height: size)
+        // macOS app icons keep ~10% transparent margin per side (824 of 1024 on the Big Sur grid); Win11 icons fill
+        // their 24 px. Drawn at 30 pt, centred on the 24 pt slot, the artwork measures ~24 pt like the reference.
+        // ponytail: full-bleed (pre-Big Sur style) icons come out ~25% larger; trim alpha bounds if that bothers.
+        let drawn = content.item == nil ? size : 30
+        iconLayer.frame = CGRect(x: iconX - (drawn - size) / 2, y: (b.height - drawn) / 2, width: drawn, height: drawn)
         label.isHidden = !showsLabel
         let lineHeight = ceil(Fonts.label.ascender - Fonts.label.descender + Fonts.label.leading)
         label.frame = CGRect(x: 40, y: floor((b.height - lineHeight) / 2), width: max(0, b.width - 50), height: lineHeight)
@@ -158,7 +162,7 @@ final class TaskbarButton: NSView {
         progressClip.frame = b
         // Badge centre (top-left origin): (icon x + 21, 10); the 8 pt dot (icon x + 23, 9). = (29 | 31, 10) / (31 | 33, 9).
         let dot = content.badge?.glyph == nil
-        let c = CGPoint(x: iconLayer.frame.minX + (dot ? 23 : 21), y: b.height - (dot ? 9 : 10))
+        let c = CGPoint(x: iconX + (dot ? 23 : 21), y: b.height - (dot ? 9 : 10))
         badge.frame = CGRect(x: c.x - badge.bounds.width / 2, y: c.y - badge.bounds.height / 2,
                              width: badge.bounds.width, height: badge.bounds.height)
     }

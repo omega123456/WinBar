@@ -71,7 +71,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private(set) var preview: PreviewController!
     private(set) var bar: BarController!
     private var grantPoll: Timer?
-    private var appearanceObservation: NSKeyValueObservation?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         EventLog.write("WinBar started pid=\(getpid())")
@@ -98,14 +97,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         updateTrust(AXIsProcessTrustedWithOptions(["AXTrustedCheckOptionPrompt": true] as CFDictionary))
     }
 
-    /// Light/dark, accent colour and accessibility display options re-apply to the bars immediately.
+    /// Accent colour and accessibility display options re-apply to the bars immediately (the bar is always dark).
     private func observeTheme() {
-        appearanceObservation = NSApp.observe(\.effectiveAppearance) { [weak self] _, _ in
-            DispatchQueue.main.async { self?.bar.themeChanged() }
-        }
-        DistributedNotificationCenter.default().addObserver(
-            self, selector: #selector(themeChanged), name: Notification.Name("AppleInterfaceThemeChangedNotification"),
-            object: nil, suspensionBehavior: .deliverImmediately)
         NotificationCenter.default.addObserver(self, selector: #selector(themeChanged),
                                                name: NSColor.systemColorsDidChangeNotification, object: nil)
         NSWorkspace.shared.notificationCenter.addObserver(
@@ -113,11 +106,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             name: NSWorkspace.accessibilityDisplayOptionsDidChangeNotification, object: nil)
     }
 
-    @objc private func themeChanged() {
-        // The appearance may update after the distributed notification; re-read on the next turn too.
-        bar.themeChanged()
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self] in self?.bar.themeChanged() }
-    }
+    @objc private func themeChanged() { bar.themeChanged() }
 
     @objc private func accessibilityChanged() {
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { [weak self] in

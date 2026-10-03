@@ -92,7 +92,7 @@ final class BarController {
         guard t != theme else { return }
         theme = t
         dots = TaskbarButton.dots(color: t.text)
-        EventLog.write("theme dark=\(t.dark) contrast=\(t.contrast) solid=\(t.solid) reduceMotion=\(t.reduceMotion)")
+        EventLog.write("theme contrast=\(t.contrast) solid=\(t.solid) reduceMotion=\(t.reduceMotion)")
         render()
     }
 
