@@ -81,6 +81,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         tracker.onWindowRemoved = { [weak self] in self?.preview.windowRemoved($0) }
         signals.onChange = { [weak self] in self?.bar.render() }
         observeTheme()
+        Updater.start() // independent of Accessibility trust
         guard AX.isWindowIDAvailable else {
             EventLog.write("_AXUIElementGetWindow unavailable: WinBar is not compatible with this macOS version")
             bar.access = .incompatible

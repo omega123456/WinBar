@@ -12,6 +12,7 @@ swift run WinBar --self-test   # pure-logic checks; exits before any UI, non-zer
 ./scripts/build-app.sh         # release build → sign → quit running copy → install to ~/Applications → launch
 ./scripts/build-app.sh --log-events   # extra args are passed to WinBar
 tail -f ~/Library/Logs/WinBar/events.log
+./scripts/release.sh            # (user runs it) bump Info.plist version, verify, commit, tag vX.Y.Z, push → .github/workflows/release.yml
 ```
 
 - **Sandbox:** SwiftPM fails inside the Claude Code Bash sandbox. `.claude/settings.local.json` excludes `swift build`, `swift run`, `swift package` and `./scripts/build-app.sh`, but only when the command is exactly one of these. Don't pipe, chain or prefix them (`|`, `&&`, `cd … &&`).
@@ -47,7 +48,7 @@ Cross-cutting rules that need several files to see:
 - **Pure logic is kept as `static func`s** (`BarController.compose/fit/menuLocation/pinOrder`, `WindowTracker.cocoaRect/displayIndex/isVisible/clampedAboveBar`, `Signals.aggregate/attribute/attention/quarantineAgent`, `Badge(dockLabel:)`) so `SelfTest` can cover them without UI. New decision logic follows this pattern.
 - **AX access goes through `AX.swift`.** Reads return nil on ordinary failures and throw only `AXFailure`. The first timeout abandons the rest of that app's reads for the current flush or tick. The global AX messaging timeout is 0.25 s.
 - **Private APIs are resolved with `dlsym` and degrade gracefully.** `_AXUIElementGetWindow` is required: without it the bar shows "incompatible". The LaunchServices attention SPI (code 563) is optional: without it attention is disabled.
-- **Idle cost:** the only periodic timer while idle is the 2 s badge poll. Animations run only while their signal is shown.
+- **Idle cost:** the only periodic timers while idle are the 2 s badge poll and the hourly update check (`Updater.swift`, GitHub Releases of `omega123456/WinBar`). Animations run only while their signal is shown.
 - **Coordinates:** AX uses top-left global coordinates and Cocoa uses bottom-left. Convert with `WindowTracker.cocoaRect(fromAX:primaryHeight:)`.
 - Code comments cite "requirement N" and "Design decision N". These refer to `.agent/plans/2026-10-03_winbar_plan.md`, which holds the full spec, the wireframes and the reasons behind the measured constants. Its mockup is in `.agent/plans/assets/`.
 

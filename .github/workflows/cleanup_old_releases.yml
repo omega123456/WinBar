@@ -1,0 +1,33 @@
+name: Cleanup old releases
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '0 3 * * *'
+
+permissions:
+  contents: read
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Keep only the latest 5 releases
+        env:
+          GH_TOKEN: ${{ secrets.RELEASE_CLEANUP_TOKEN }}
+          REPO: ${{ github.repository }}
+          KEEP: 5
+        run: |
+          releases=$(gh release list \
+            --repo "$REPO" \
+            --limit 100 \
+            --json tagName,isDraft,isPrerelease,createdAt \
+            --jq 'sort_by(.createdAt) | reverse | .[].tagName')
+
+          echo "$releases" | tail -n +$((KEEP + 1)) | while read -r tag; do
+            if [ -n "$tag" ]; then
+              echo "Deleting release: $tag"
+              gh release delete "$tag" --repo "$REPO" --yes
+            fi
+          done

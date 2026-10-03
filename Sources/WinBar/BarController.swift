@@ -328,6 +328,9 @@ final class BarController {
         menu.autoenablesItems = false
         let login = menu.add("Launch at Login") { LaunchAtLogin.toggle() }
         login.state = LaunchAtLogin.isEnabled ? .on : .off
+        let updates = menu.add("Automatic Updates") { Updater.toggle() }
+        updates.state = Updater.isEnabled ? .on : .off
+        menu.add("Check for Updates…") { Updater.check(manual: true) }
         if !PreviewController.hasPermission {
             menu.add("Enable Window Previews…") {
                 NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture")!)

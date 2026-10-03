@@ -1,6 +1,7 @@
 #!/bin/bash
 # Release build, sign with the local identity, install to ~/Applications and launch.
 # Extra arguments are passed to WinBar, e.g. ./scripts/build-app.sh --log-events
+# BUNDLE_ONLY=1 stops after signing (used by the release workflow).
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
@@ -28,6 +29,7 @@ if [[ -d Resources/Fonts ]]; then
 fi
 
 codesign --force --sign "$IDENTITY" "$APP"
+[[ ${BUNDLE_ONLY:-} == 1 ]] && exit 0   # CI: leave the signed .build/WinBar.app, don't install
 
 # Quit the running copy and wait (up to 5 s) so `open` starts a fresh process.
 pkill -x WinBar || true

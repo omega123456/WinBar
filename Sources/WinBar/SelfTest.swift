@@ -23,6 +23,7 @@ enum SelfTest {
         badgeMapping()
         downloads()
         attention()
+        updateVersions()
         for f in failures { print("FAIL: \(f)") }
         print("self-test: \(total - failures.count)/\(total) checks passed")
         return failures.isEmpty
@@ -217,5 +218,12 @@ enum SelfTest {
         check("attention: ended while held → none", a(100 + 20, 100 + 20, false) == (.none, nil))
         check("attention: Reduce Motion = plate while requested, no pulses",
               a(nil, 100.5, true) == (.holding, nil) && a(100.5, 100.5, true) == (.none, nil))
+    }
+
+    private static func updateVersions() {
+        check("update: 1.0.10 is newer than 1.0.9", Updater.isNewer("1.0.10", than: "1.0.9"))
+        check("update: v-prefixed tag is newer", Updater.isNewer("v1.1.0", than: "1.0.0"))
+        check("update: 1.0 equals 1.0.0", !Updater.isNewer("1.0", than: "1.0.0") && !Updater.isNewer("1.0.0", than: "1.0"))
+        check("update: older is not newer", !Updater.isNewer("1.9.9", than: "2.0.0"))
     }
 }

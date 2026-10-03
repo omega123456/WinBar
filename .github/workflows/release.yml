@@ -1,0 +1,95 @@
+name: Release
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  publish-macos:
+    permissions:
+      contents: write
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Import WinBar code signing certificate
+        shell: bash
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
+          EXPECTED_APPLE_CERTIFICATE_SHA1: D1B864D3DF24B8E5A52D69CB07988DABB18F9455
+        run: |
+          set -euo pipefail
+
+          : "${APPLE_CERTIFICATE:?Missing APPLE_CERTIFICATE secret. Export WinBar Local Signing as a base64-encoded .p12.}"
+          : "${APPLE_CERTIFICATE_PASSWORD:?Missing APPLE_CERTIFICATE_PASSWORD secret.}"
+          : "${KEYCHAIN_PASSWORD:?Missing KEYCHAIN_PASSWORD secret.}"
+
+          printf '%s' "$APPLE_CERTIFICATE" > certificate-base64.txt
+          openssl base64 -d -A -in certificate-base64.txt -out certificate.p12
+
+          security create-keychain -p "$KEYCHAIN_PASSWORD" build.keychain
+          security default-keychain -s build.keychain
+          security list-keychains -d user -s build.keychain
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" build.keychain
+          security set-keychain-settings -t 3600 -u build.keychain
+          security import certificate.p12 -k build.keychain -P "$APPLE_CERTIFICATE_PASSWORD" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PASSWORD" build.keychain
+          security find-certificate -c "WinBar Local Signing" -p build.keychain > certificate.cer
+          sudo security add-trusted-cert -d -r trustRoot -p codeSign -k /Library/Keychains/System.keychain certificate.cer
+          rm -f certificate-base64.txt certificate.p12 certificate.cer
+
+          identities="$(security find-identity -v -p codesigning build.keychain)"
+          printf '%s\n' "$identities"
+          if [[ "$identities" != *"$EXPECTED_APPLE_CERTIFICATE_SHA1"*"WinBar Local Signing"* ]]; then
+            echo "[release] Imported certificate does not match WinBar Local Signing (${EXPECTED_APPLE_CERTIFICATE_SHA1})."
+            exit 1
+          fi
+
+      - name: Check tag matches Info.plist version
+        id: version
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' Info.plist)"
+          if [ "v$version" != "$GITHUB_REF_NAME" ]; then
+            echo "[release] Tag $GITHUB_REF_NAME does not match Info.plist version $version."
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - name: Self-test
+        run: swift run WinBar --self-test
+
+      - name: Build and sign WinBar.app
+        run: BUNDLE_ONLY=1 ./scripts/build-app.sh
+
+      - name: Verify macOS code signing requirement
+        shell: bash
+        env:
+          EXPECTED_APPLE_CERTIFICATE_SHA1: d1b864d3df24b8e5a52d69cb07988dabb18f9455
+        run: |
+          set -euo pipefail
+          requirement="$(codesign -d -r- .build/WinBar.app 2>&1)"
+          printf '%s\n' "$requirement"
+          if [[ "$requirement" != *"certificate leaf = H\"${EXPECTED_APPLE_CERTIFICATE_SHA1}\""* ]]; then
+            echo "[release] WinBar.app was not signed by the expected WinBar Local Signing certificate."
+            echo "[release] Accessibility and Screen Recording grants would not survive the update."
+            exit 1
+          fi
+
+      - name: Publish GitHub release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          set -euo pipefail
+          zip="WinBar-${VERSION}.zip"
+          ditto -c -k --keepParent .build/WinBar.app "$zip"
+          notes=.github/release-body.md
+          [ -f "$notes" ] || { echo "See the attached WinBar-${VERSION}.zip." > "$RUNNER_TEMP/notes.md"; notes="$RUNNER_TEMP/notes.md"; }
+          gh release create "$GITHUB_REF_NAME" "$zip" --title "WinBar $GITHUB_REF_NAME" --notes-file "$notes"
