@@ -15,6 +15,7 @@ enum SelfTest {
         coordinateConversion()
         displayAssignment()
         visibilityRule()
+        fullScreenSpaces()
         barClamp()
         composition()
         fitting()
@@ -83,6 +84,17 @@ enum SelfTest {
         check("app hidden (any Space) → visible", vis(false, false, true))
         check("minimized + app hidden → visible", vis(false, true, true))
         check("on screen + minimized → visible", vis(true, true, false))
+    }
+
+    // Requirement 4: CGSCopyManagedDisplaySpaces shape, "Current Space" type 4 = full screen.
+    private static func fullScreenSpaces() {
+        let displays: [(id: CGDirectDisplayID, uuid: String)] = [(1, "A"), (2, "B")]
+        let space = { (uuid: String, type: Int) -> [String: Any] in ["Display Identifier": uuid, "Current Space": ["type": type]] }
+        let fs = { WindowTracker.fullScreen(spaces: $0, displays: displays) }
+        check("desktop Spaces → no full-screen display", fs([space("A", 0), space("B", 0)]).isEmpty)
+        check("full-screen Space on B → only B", fs([space("A", 0), space("B", 4)]) == [2])
+        check("shared Spaces (\"Main\") full screen → every display", fs([space("Main", 4)]) == [1, 2])
+        check("SPI unavailable → none", fs([]).isEmpty)
     }
 
     // MARK: Bar composition (requirements 12, 13, 31)

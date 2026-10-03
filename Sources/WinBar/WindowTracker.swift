@@ -54,6 +54,7 @@ final class WindowTracker {
     /// The focused window of the frontmost app, if it is a tracked window.
     private(set) var activeWindowID: CGWindowID?
     private(set) var isTracking = false
+    private(set) var fullScreenDisplays = Set<CGDirectDisplayID>() // requirement 4: no bar on these displays
     /// Called once per coalesced burst that changed the model.
     var onChange: (() -> Void)?
     /// Called for every window that stops being tracked (destroyed or its app quit): evicts its thumbnail.
@@ -125,11 +126,19 @@ final class WindowTracker {
             EventLog.write("ws space changed")
             rescanPids.formUnion(apps.keys)
             schedule()
+            // Leaving fullscreen animates for ~0.7 s (verified with Warp on macOS 26): until it ends only a transition
+            // window is in CGWindowList, so the restored window would stay invisible. Re-read it once it has settled.
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1) { [weak self] in
+                guard let self, isTracking else { return }
+                refreshOnScreen = true
+                schedule()
+            }
         }
         workspaceTokens.append(NotificationCenter.default.addObserver(
             forName: NSApplication.didChangeScreenParametersNotification, object: nil, queue: .main
         ) { [unowned self] _ in
             EventLog.write("screens changed")
+            refreshOnScreen = true
             schedule()
         })
 
@@ -270,7 +279,12 @@ final class WindowTracker {
         screens = NSScreen.screens.map { (Self.displayID(of: $0), $0.frame, $0.visibleFrame) }
         // CGWindowList only on: launch, Space change, window creation, de-minimize, unhide.
         if !newElements.isEmpty || !rescanPids.isEmpty { refreshOnScreen = true }
-        if refreshOnScreen { onScreenIDs = Self.onScreenWindowIDs() }
+        if refreshOnScreen {
+            onScreenIDs = Self.onScreenWindowIDs()
+            let fs = Self.fullScreen(spaces: Self.managedDisplaySpaces(),
+                                     displays: screens.map { ($0.id, Self.displayUUID($0.id)) })
+            if fs != fullScreenDisplays { fullScreenDisplays = fs; note("full-screen displays \(fs.sorted())") }
+        }
 
         for (pid, el) in newElements {
             if let app = apps[pid] { withApp(app) { try addWindow(el, app, created: true) } }
@@ -532,6 +546,31 @@ final class WindowTracker {
         let barTop = screen.minY + barHeight
         guard frame != screen, abs(frame.minY - visible.minY) < 1, frame.minY < barTop, frame.maxY > barTop + barHeight else { return nil }
         return CGRect(x: frame.minX, y: barTop, width: frame.width, height: frame.maxY - barTop)
+    }
+
+    /// Requirement 4: displays whose current Space is a full-screen one (CGS space type 4). Without
+    /// "Displays have separate Spaces" there is one "Main" entry, and a full-screen Space then covers every display.
+    static func fullScreen(spaces: [[String: Any]], displays: [(id: CGDirectDisplayID, uuid: String)]) -> Set<CGDirectDisplayID> {
+        var result = Set<CGDirectDisplayID>()
+        for d in spaces where (d["Current Space"] as? [String: Any])?["type"] as? Int == 4 {
+            let uuid = d["Display Identifier"] as? String
+            result.formUnion(displays.filter { uuid == "Main" || $0.uuid == uuid }.map(\.id))
+        }
+        return result
+    }
+
+    /// Private SkyLight SPI (verified on macOS 26), resolved with dlsym; empty if missing, so the bar stays everywhere.
+    private static func managedDisplaySpaces() -> [[String: Any]] {
+        typealias Conn = @convention(c) () -> Int32
+        typealias Copy = @convention(c) (Int32) -> Unmanaged<CFArray>?
+        let h = UnsafeMutableRawPointer(bitPattern: -2) // RTLD_DEFAULT
+        guard let c = dlsym(h, "CGSMainConnectionID"), let f = dlsym(h, "CGSCopyManagedDisplaySpaces") else { return [] }
+        let conn = unsafeBitCast(c, to: Conn.self)()
+        return unsafeBitCast(f, to: Copy.self)(conn)?.takeRetainedValue() as? [[String: Any]] ?? []
+    }
+
+    private static func displayUUID(_ id: CGDirectDisplayID) -> String {
+        CGDisplayCreateUUIDFromDisplayID(id).map { CFUUIDCreateString(nil, $0.takeRetainedValue()) as String } ?? ""
     }
 
     /// Requirement 8.

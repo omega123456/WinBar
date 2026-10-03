@@ -178,6 +178,9 @@ final class BarController {
                 panels[id] = TaskbarPanel(screen: screen, controller: self)
                 EventLog.write("bar+ display=\(id)")
             }
+            if let panel = panels[id], tracker.fullScreenDisplays.contains(id) == panel.isVisible {
+                if panel.isVisible { panel.orderOut(nil); preview.hideNow() } else { panel.orderFrontRegardless() }
+            }
         }
         for (id, panel) in panels where !live.contains(id) {
             panel.orderOut(nil)

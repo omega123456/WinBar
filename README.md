@@ -37,7 +37,9 @@ This setup also works with the rest of WinBar:
 - **Menus:** a hidden Dock doesn't reserve the bottom 74 pt, so right-click menus still open right on the bar.
 - **Badges:** WinBar still reads them, because it reads them from the Dock even while the Dock is hidden.
 
-You lose the Dock, but WinBar replaces it anyway. This trick hasn't been tested on macOS 26.
+You lose the Dock, but WinBar replaces it anyway.
+
+On macOS 26 the delay only holds on desktop Spaces. The Dock still appears in Mission Control, and on full-screen Spaces when the pointer is pushed against the bottom edge. Neither is configurable. WinBar hides itself on full-screen Spaces, so nothing overlaps there.
 
 To undo it:
 ```sh
