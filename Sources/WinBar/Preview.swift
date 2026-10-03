@@ -204,7 +204,8 @@ final class PreviewView: NSView {
     var onClose: (() -> Void)?
 
     private let effect = NSVisualEffectView()
-    private let chrome = CALayer()          // 85% tint + 1 pt stroke
+    private let luminosity = NSView()       // luminosityBlendMode layer over the blur, as on the bar
+    private let chrome = CALayer()          // noise (or solid fill) + 1 pt stroke
     private let iconLayer = CALayer()
     private let title = NSTextField(labelWithString: "")
     private let close = CloseButton()
@@ -226,6 +227,11 @@ final class PreviewView: NSView {
             return true
         }
         addSubview(effect)
+        luminosity.frame = bounds
+        luminosity.wantsLayer = true
+        luminosity.layer?.cornerRadius = 8
+        luminosity.layer?.compositingFilter = "luminosityBlendMode"
+        addSubview(luminosity)
         let content = NSView(frame: bounds)
         content.wantsLayer = true
         addSubview(content)
@@ -264,9 +270,11 @@ final class PreviewView: NSView {
     func set(icon: NSImage, title text: String, thumb t: Thumb, theme: Theme) {
         appearance = theme.appearance
         effect.isHidden = theme.solid
+        luminosity.isHidden = theme.solid
         let scale = window?.backingScaleFactor ?? 2
         CATransaction.begin()
         CATransaction.setDisableActions(true)
+        luminosity.layer?.backgroundColor = theme.flyoutLuminosity
         chrome.backgroundColor = theme.flyout
         chrome.borderColor = theme.flyoutStroke
         fallback.backgroundColor = theme.hover

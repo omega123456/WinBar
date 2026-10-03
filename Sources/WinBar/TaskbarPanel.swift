@@ -72,7 +72,10 @@ struct Theme: Equatable {
     var attentionPlate: CGColor { rgb(0x442726) }
     var attentionEdge: CGColor { rgb(0xFF99A4, 0.2) }
     var attentionIndicator: CGColor { rgb(0xFF99A4) }
-    var flyout: CGColor { rgb(0x2C2C2C, solid ? 1 : 0.85) }
+    /// Hover preview: same acrylic stack as the bar, lighter luminosity (Win11 flyout #2C2C2C), no tint.
+    /// Over the reference's blue wallpaper the Win11 preview keeps a visible hue; lower it to darken the body.
+    var flyoutLuminosity: CGColor { rgb(0x2C2C2C) }
+    var flyout: CGColor { solid ? rgb(0x2C2C2C) : BarBackgroundView.noiseFill }
     var flyoutStroke: CGColor { white(0.09) }
 }
 
@@ -454,6 +457,9 @@ final class BarBackgroundView: NSView {
                             bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
         return ctx.makeImage()!
     }()
+
+    /// The noise tile as a pattern fill, for layers (hover preview).
+    static let noiseFill = NSColor(patternImage: NSImage(cgImage: noise, size: NSSize(width: 128, height: 128))).cgColor
 }
 
 /// "Open Settings": Selawik Semibold 12, padding 5 × 12 inside a 1 pt edge, radius 4, active plate. Accepts the first click.
