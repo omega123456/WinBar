@@ -92,17 +92,52 @@ jobs:
           zip="WinBar-${VERSION}.zip"
           ditto -c -k --keepParent .build/WinBar.app "$zip"
 
-          # DMG: manual install (drag WinBar onto the Applications link).
+          # DMG: drag-to-install window (WinBar.app beside an Applications link, fixed icon view) with the
+          # app icon as the volume icon. Finder writes the layout (.DS_Store) via AppleScript, like Tauri's bundle_dmg.sh.
           dmg="WinBar-${VERSION}.dmg"
+          vol="WinBar ${VERSION}"
           stage="$RUNNER_TEMP/dmg"
+          rw="$RUNNER_TEMP/rw.dmg"
           mkdir -p "$stage"
           ditto .build/WinBar.app "$stage/WinBar.app"
           ln -s /Applications "$stage/Applications"
+          cp Resources/AppIcon.icns "$stage/.VolumeIcon.icns"
           for attempt in 1 2 3; do # hdiutil intermittently fails with "Resource busy" on hosted runners
-            hdiutil create -volname "WinBar ${VERSION}" -srcfolder "$stage" -format UDZO -ov "$dmg" && break
+            hdiutil create -volname "$vol" -srcfolder "$stage" -fs HFS+ -format UDRW -ov "$rw" && break
             [ "$attempt" -lt 3 ] || exit 1
             sleep 5
           done
+          mnt="$(hdiutil attach -readwrite -noverify -noautoopen "$rw" | awk -F'\t' '/Apple_HFS/ {print $NF}')"
+          SetFile -c icnC "$mnt/.VolumeIcon.icns"
+          SetFile -a C "$mnt"
+          osascript <<EOF
+          tell application "Finder"
+              tell disk "$vol"
+                  open
+                  set current view of container window to icon view
+                  set toolbar visible of container window to false
+                  set statusbar visible of container window to false
+                  set the bounds of container window to {200, 120, 860, 520}
+                  set opts to the icon view options of container window
+                  set arrangement of opts to not arranged
+                  set icon size of opts to 128
+                  set position of item "WinBar.app" of container window to {170, 180}
+                  set position of item "Applications" of container window to {490, 180}
+                  close
+                  open
+                  update without registering applications
+                  delay 2
+                  close
+              end tell
+          end tell
+          EOF
+          sync
+          if [ ! -f "$mnt/.DS_Store" ]; then
+            echo "[release] Finder did not write the DMG window layout."
+            exit 1
+          fi
+          hdiutil detach "$mnt" || { sleep 2; hdiutil detach -force "$mnt"; }
+          hdiutil convert "$rw" -format UDZO -ov -o "$dmg"
 
           notes=.github/release-body.md
           [ -f "$notes" ] || { echo "Open WinBar-${VERSION}.dmg and drag WinBar to Applications." > "$RUNNER_TEMP/notes.md"; notes="$RUNNER_TEMP/notes.md"; }
