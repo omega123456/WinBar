@@ -575,7 +575,8 @@ final class WindowTracker {
 
     /// Requirement 8.
     static func isVisible(onScreen: Bool, minimized: Bool, appHidden: Bool) -> Bool {
-        onScreen || minimized || appHidden
+        // Hiding doesn't refresh the on-screen list, so a just-hidden window can still read as on screen.
+        minimized || (onScreen && !appHidden)
     }
 
     static func displayID(of screen: NSScreen) -> CGDirectDisplayID {

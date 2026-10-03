@@ -81,7 +81,8 @@ enum SelfTest {
         check("off-screen, normal, app shown → hidden", vis(false, false, false) == false)
         check("on screen → visible", vis(true, false, false))
         check("minimized (any Space) → visible", vis(false, true, false))
-        check("app hidden (any Space) → visible", vis(false, false, true))
+        check("app hidden → hidden", vis(false, false, true) == false)
+        check("on screen (stale) + app hidden → hidden", vis(true, false, true) == false)
         check("minimized + app hidden → visible", vis(false, true, true))
         check("on screen + minimized → visible", vis(true, true, false))
     }
