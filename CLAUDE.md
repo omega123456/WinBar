@@ -9,15 +9,17 @@ WinBar is a Windows 11 taskbar ("Combine taskbar buttons: Never") for macOS 26 o
 ```sh
 swift build                    # debug build (compile check)
 swift run WinBar --self-test   # pure-logic checks; exits before any UI, non-zero on failure
-./scripts/build-app.sh         # release build → sign → quit running copy → install to ~/Applications → launch
+./scripts/build-app.sh         # debug "WinBar Dev" build → sign → quit running WinBar (prod too) → install to ~/Applications → launch
 ./scripts/build-app.sh --log-events   # extra args are passed to WinBar
-tail -f ~/Library/Logs/WinBar/events.log
+tail -f ~/Library/Logs/WinBar\ Dev/events.log
+pkill -x WinBarDev; open /Applications/WinBar.app   # back to production
 ./scripts/release.sh            # (user runs it) bump Info.plist version, verify, commit, tag vX.Y.Z, push → .github/workflows/release.yml
 ```
 
 - **Sandbox:** SwiftPM fails inside the Claude Code Bash sandbox. `.claude/settings.local.json` excludes `swift build`, `swift run`, `swift package` and `./scripts/build-app.sh`, but only when the command is exactly one of these. Don't pipe, chain or prefix them (`|`, `&&`, `cd … &&`).
 - **No test framework** (XCTest isn't available with CLT only). `--self-test` is the whole suite and can't run a single check. To add coverage, add a `check(...)` in `Sources/WinBar/SelfTest.swift`. It counts failures explicitly, because `assert` is compiled out of release builds.
-- **Never run the binary directly** (`.build/.../WinBar`) for real use. TCC would check permissions against the terminal. Launch the installed app with the script or `open ~/Applications/WinBar.app`.
+- **Dev vs production:** production is `/Applications/WinBar.app` (`local.winbar`, from the DMG, self-updating). `build-app.sh` builds **WinBar Dev**: a debug build with bundle ID `local.winbar.dev` and executable `WinBarDev`, so UserDefaults, the login item and TCC grants are separate. Dev-only behaviour is gated by `#if DEBUG` (no updater, its own log folder). `BUNDLE_ONLY=1` (CI) builds the production release bundle.
+- **Never run the binary directly** (`.build/.../WinBar`) for real use. TCC would check permissions against the terminal. Launch the installed app with the script or `open ~/Applications/WinBar\ Dev.app`.
 - `scripts/make-cert.sh` is interactive (keychain password, trust dialog). The user runs it in Terminal.app, not you. It creates the "WinBar Local Signing" identity, which keeps the Accessibility and Screen Recording grants valid across rebuilds.
 - `--log-events` writes to a file because the sandbox blocks `/usr/bin/log`. The log holds window titles in clear text.
 

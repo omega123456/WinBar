@@ -89,6 +89,15 @@ final class TaskbarPanel: NSPanel {
     static let edge: CGFloat = 12, gap: CGFloat = 2, groupGap: CGFloat = 12
     /// Row content is centred in the 47 pt below the 1 pt top border (mockup: border-box bar, centred flex row).
     static let rowMidY: CGFloat = (height - 1) / 2
+    #if DEBUG
+    /// WinBar Dev stamp, drawn by BarBackgroundView at the right end (clicks on it are bar clicks).
+    /// Buttons and the call to action stop `edge` before it.
+    static let devStamp = NSAttributedString(string: "DEV", attributes: [.font: Fonts.semibold, .foregroundColor: NSColor.white])
+    static let devStampWidth = ceil(devStamp.size().width) + 16
+    static let rightReserve = devStampWidth + edge
+    #else
+    static let rightReserve: CGFloat = 0
+    #endif
 
     weak var controller: BarController?
     private let effect = NSVisualEffectView()
@@ -221,7 +230,7 @@ final class TaskbarPanel: NSPanel {
         label.stringValue = cta.text
         let size = label.intrinsicContentSize
         let buttonSize = button.intrinsicContentSize
-        let room = frame.width - Self.edge - x - (cta.showsButton ? buttonSize.width + 10 : 0)
+        let room = frame.width - Self.edge - Self.rightReserve - x - (cta.showsButton ? buttonSize.width + 10 : 0)
         let width = max(0, min(ceil(size.width), room))
         label.frame = NSRect(x: x, y: Self.rowMidY - size.height / 2, width: width, height: size.height)
         button.frame = NSRect(x: x + width + 10, y: Self.rowMidY - buttonSize.height / 2,
@@ -436,6 +445,15 @@ final class BarBackgroundView: NSView {
         }
         ctx.setFillColor(theme.topBorder)
         ctx.fill(CGRect(x: 0, y: bounds.height - 1, width: bounds.width, height: 1))
+        #if DEBUG
+        let pill = CGRect(x: bounds.width - TaskbarPanel.edge - TaskbarPanel.devStampWidth, y: TaskbarPanel.rowMidY - 10,
+                          width: TaskbarPanel.devStampWidth, height: 20)
+        ctx.addPath(CGPath(roundedRect: pill, cornerWidth: 4, cornerHeight: 4, transform: nil))
+        ctx.setFillColor(rgb(0xCA5010))
+        ctx.fillPath()
+        let s = TaskbarPanel.devStamp.size()
+        TaskbarPanel.devStamp.draw(at: NSPoint(x: pill.midX - s.width / 2, y: pill.midY - s.height / 2))
+        #endif
     }
 
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }

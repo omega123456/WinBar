@@ -49,20 +49,28 @@ Then move the Dock back to the side.
 
 ## Build, install and run
 
+Production WinBar is installed from the release DMG into `/Applications/WinBar.app` and updates itself (see [Releases and updates](#releases-and-updates)). A local build is a separate development copy, **WinBar Dev**, so testing never touches production:
+
 ```sh
 ./scripts/build-app.sh
 ```
 
 The script does the following:
-1. Builds in release mode.
-2. Assembles `.build/WinBar.app` and signs it with "WinBar Local Signing".
-3. Quits any running copy.
-4. Installs the app to `~/Applications/WinBar.app` and removes the build copy, so only one bundle with ID `local.winbar` exists.
+1. Builds in debug mode. Debug builds compile in the dev-only behaviour: no update checks, and the event log goes to its own folder.
+2. Assembles `.build/WinBar Dev.app` with bundle ID `local.winbar.dev` and executable `WinBarDev`, and signs it with "WinBar Local Signing". Pins, settings and Launch at Login are kept separately from production, because they belong to the bundle ID.
+3. Quits any running WinBar, production included, because two bars can't run at the same time.
+4. Installs the app to `~/Applications/WinBar Dev.app` and removes the build copy, so only one bundle with ID `local.winbar.dev` exists.
 5. Launches the app.
 
 Any extra arguments are passed on to WinBar, for example `./scripts/build-app.sh --log-events`.
 
-Always launch the installed app (with the script, or with `open ~/Applications/WinBar.app`). Do not run the binary directly from a terminal: macOS would check permissions against the terminal instead of WinBar.
+To go back to production:
+
+```sh
+pkill -x WinBarDev; open /Applications/WinBar.app
+```
+
+Always launch the installed app (with the script, or with `open`). Do not run the binary directly from a terminal: macOS would check permissions against the terminal instead of WinBar.
 
 To check the self-test of the pure logic (it exits before any UI, and a failure gives a non-zero exit status):
 
@@ -78,7 +86,7 @@ On first run, macOS asks for these permissions:
 - **Screen Recording** (optional, for hover thumbnails). WinBar requests it once, after Accessibility is granted. Enable it in Privacy & Security → Screen & System Audio Recording. A grant may only take effect after WinBar relaunches. If you don't grant it, everything else still works.
 - **Downloads folder** (optional, for download progress). macOS asks the first time WinBar looks at `~/Downloads`. If you deny it, download progress may not appear, or may appear on the frontmost app instead of the downloading one.
 
-Rebuilding with `build-app.sh` keeps all of these grants, because the signing identity does not change.
+WinBar Dev is a separate app to macOS, so it needs its own grants the first time. Rebuilding with `build-app.sh` then keeps them, because the signing identity does not change.
 
 ## Releases and updates
 
@@ -106,14 +114,15 @@ One-time repository secrets:
 Launch with `--log-events` to append millisecond-timestamped plain-text lines to:
 
 ```
-~/Library/Logs/WinBar/events.log
+~/Library/Logs/WinBar/events.log        # production
+~/Library/Logs/WinBar Dev/events.log    # WinBar Dev
 ```
 
 The file is cleared at each launch and removed when WinBar starts without the flag. It contains window titles and app names in clear text. To read it:
 
 ```sh
 ./scripts/build-app.sh --log-events
-tail -f ~/Library/Logs/WinBar/events.log
+tail -f ~/Library/Logs/WinBar\ Dev/events.log
 ```
 
 The log is a file rather than the unified log for two reasons: the Claude Code sandbox blocks `/usr/bin/log`, and zsh has its own built-in `log` command.
@@ -126,11 +135,11 @@ SwiftPM only works outside the Claude Code Bash sandbox. `.claude/settings.local
 
 You have two options:
 
-- **Build it there (recommended).** Clone the repository, then run `./scripts/make-cert.sh` (in Terminal.app) and `./scripts/build-app.sh`.
-- **Copy the app.** Copy `~/Applications/WinBar.app` to the other Mac's `~/Applications`, clear the quarantine attribute, then open it:
+- **Install the release (recommended).** Download the latest `WinBar-X.Y.Z.dmg` from GitHub Releases and drag WinBar to Applications. It then updates itself. A local `build-app.sh` build is WinBar Dev, not production.
+- **Copy the app.** Copy `/Applications/WinBar.app` to the other Mac's `/Applications`, clear the quarantine attribute, then open it:
   ```sh
-  xattr -dr com.apple.quarantine ~/Applications/WinBar.app
-  open ~/Applications/WinBar.app
+  xattr -dr com.apple.quarantine /Applications/WinBar.app
+  open /Applications/WinBar.app
   ```
   The other Mac does not trust this Mac's certificate. Permissions granted there may need re-granting after you copy a new build.
 

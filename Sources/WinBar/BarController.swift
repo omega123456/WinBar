@@ -117,7 +117,7 @@ final class BarController {
                 return nil
             }
             let fit = trusted
-                ? Self.fit(pinned: pinned.map(natural), other: other.map(natural), available: panel.frame.width - 2 * TaskbarPanel.edge)
+                ? Self.fit(pinned: pinned.map(natural), other: other.map(natural), available: panel.frame.width - 2 * TaskbarPanel.edge - TaskbarPanel.rightReserve)
                 : Fit(pinned: pinned.map { _ in Self.slot }, other: [], iconOnly: true, overflow: false)
             hiddenItems[id] = Array(pinned.dropFirst(fit.pinned.count)) + Array(other.dropFirst(fit.other.count))
             return (id: id, panel: panel, pinned: Array(pinned.prefix(fit.pinned.count)), other: Array(other.prefix(fit.other.count)), fit: fit)
@@ -329,6 +329,11 @@ final class BarController {
     func showBarMenu(_ event: NSEvent, in view: NSView) {
         let menu = NSMenu()
         menu.autoenablesItems = false
+        #if DEBUG
+        let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "?"
+        menu.add("WinBar Dev \(version) (debug)", enabled: false) {}
+        menu.addItem(.separator())
+        #endif
         let login = menu.add("Launch at Login") { LaunchAtLogin.toggle() }
         login.state = LaunchAtLogin.isEnabled ? .on : .off
         let updates = menu.add("Automatic Updates") { Updater.toggle() }

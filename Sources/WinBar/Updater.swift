@@ -14,8 +14,14 @@ enum Updater {
 
     static var isEnabled: Bool { !UserDefaults.standard.bool(forKey: disabledKey) }
     private static var current: String { Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "0" }
-    /// `swift run` has no .app bundle: nothing to replace.
+    /// `swift run` has no .app bundle: nothing to replace. Debug builds are WinBar Dev and never update.
+    #if DEBUG
+    private static let isInstallable = false
+    private static let notInstallableReason = "This is a development build."
+    #else
     private static var isInstallable: Bool { Bundle.main.bundleURL.pathExtension == "app" }
+    private static let notInstallableReason = "This copy of WinBar is not an installed app."
+    #endif
 
     static func start() {
         guard isEnabled, isInstallable, timer == nil else { return }
@@ -39,7 +45,7 @@ enum Updater {
     }
 
     static func check(manual: Bool) {
-        guard isInstallable else { if manual { notice("Updates unavailable", "This copy of WinBar is not an installed app.") }; return }
+        guard isInstallable else { if manual { notice("Updates unavailable", notInstallableReason) }; return }
         guard !busy else { return }
         busy = true
         var request = URLRequest(url: URL(string: "https://api.github.com/repos/\(repo)/releases/latest")!)

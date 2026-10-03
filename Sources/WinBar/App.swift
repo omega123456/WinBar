@@ -15,12 +15,17 @@ enum WinBarMain {
     }
 }
 
-/// `--log-events`: millisecond-timestamped plain-text lines in ~/Library/Logs/WinBar/events.log,
-/// cleared at each launch. The file only exists while the flag is used.
+/// `--log-events`: millisecond-timestamped plain-text lines in ~/Library/Logs/WinBar/events.log
+/// (WinBar Dev: ~/Library/Logs/WinBar Dev/events.log), cleared at each launch. The file only exists while the flag is used.
 enum EventLog {
     private static var handle: FileHandle?
+    #if DEBUG
+    private static let folder = "WinBar Dev"
+    #else
+    private static let folder = "WinBar"
+    #endif
     private static let url = FileManager.default.homeDirectoryForCurrentUser
-        .appendingPathComponent("Library/Logs/WinBar/events.log")
+        .appendingPathComponent("Library/Logs/\(folder)/events.log")
     private static let formatter: DateFormatter = {
         let f = DateFormatter()
         f.locale = Locale(identifier: "en_US_POSIX")
