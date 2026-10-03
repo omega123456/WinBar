@@ -2,13 +2,14 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-WinBar is a Windows 11 taskbar ("Combine taskbar buttons: Never") for macOS 26 on Apple Silicon. It is an `LSUIElement` agent app (`local.winbar`) for personal use only: self-signed, not sandboxed, never notarized or distributed. It is a single SwiftPM executable target that uses system frameworks only (no dependencies), with Swift 6.3 Command Line Tools and no Xcode. `Package.swift` pins Swift language mode v5.
+WinBar is a Windows 11 taskbar ("Combine taskbar buttons: Never") for macOS 26 on Apple Silicon. It is an `LSUIElement` agent app (`local.winbar`) for personal use only: self-signed, not sandboxed, never notarized or distributed. It is a single SwiftPM executable target that uses system frameworks only, built with the Swift 6.3 Command Line Tools. The only dependency is swift-snapshot-testing, used by the test target alone; tests run with Xcode's toolchain via `scripts/test.sh`. `Package.swift` pins Swift language mode v5.
 
 ## Commands
 
 ```sh
 swift build                    # debug build (compile check)
 swift run WinBar --self-test   # pure-logic checks; exits before any UI, non-zero on failure
+./scripts/test.sh              # snapshot tests (Tests/WinBarTests), offscreen; extra args go to swift test (--filter …)
 ./scripts/build-app.sh         # debug "WinBar Dev" build → sign → quit running WinBar (prod too) → install to ~/Applications → launch
 ./scripts/build-app.sh --log-events   # extra args are passed to WinBar
 tail -f ~/Library/Logs/WinBar\ Dev/events.log
@@ -16,8 +17,17 @@ pkill -x WinBarDev; open /Applications/WinBar.app   # back to production
 ./scripts/release.sh            # (user runs it) bump Info.plist version, verify, commit, tag vX.Y.Z, push → .github/workflows/release.yml
 ```
 
-- **Sandbox:** SwiftPM fails inside the Claude Code Bash sandbox. `.claude/settings.local.json` excludes `swift build`, `swift run`, `swift package` and `./scripts/build-app.sh`, but only when the command is exactly one of these. Don't pipe, chain or prefix them (`|`, `&&`, `cd … &&`).
-- **No test framework** (XCTest isn't available with CLT only). `--self-test` is the whole suite and can't run a single check. To add coverage, add a `check(...)` in `Sources/WinBar/SelfTest.swift`. It counts failures explicitly, because `assert` is compiled out of release builds.
+- **Sandbox:** SwiftPM fails inside the Claude Code Bash sandbox. `.claude/settings.local.json` excludes `swift build`, `swift run`, `swift package`, `./scripts/build-app.sh` and `./scripts/test.sh`, but only when the command is exactly one of these. Don't pipe, chain or prefix them (`|`, `&&`, `cd … &&`).
+- **Two suites.** `--self-test` covers the pure logic and needs only the CLT. To add coverage, add a `check(...)` in `Sources/WinBar/SelfTest.swift`. It counts failures explicitly, because `assert` is compiled out of release builds.
+- **Snapshot tests** (`Tests/WinBarTests`, Swift Testing + swift-snapshot-testing) render views offscreen with `CALayer.render(in:)` and compare them with the PNGs in `__Snapshots__`. Nothing is shown on screen and no TCC grant is needed.
+  - **Toolchain:** the library imports XCTest, which only Xcode ships. So `scripts/test.sh` runs `swift test` with `DEVELOPER_DIR` set to Xcode (Swift 6.4) and its own `.build/xcode` scratch path. `xcode-select` stays on the CLT (6.3.1) for app builds. Xcode's license must be accepted, which needs sudo, so the user runs it.
+  - **Coverage:** `TaskbarButtonSnapshotTests` has one parameterized test over 14 states. They are the window, active, icon-only, launcher, app item and overflow buttons; the 4 badges; progress and paused progress; attention; and a long title. References are named `TaskbarButton.<case>.png`. To add a state, add a `Case` and its `content`.
+  - **Determinism:** tests register the bundled Selawik fonts themselves. Without that, `Fonts.label` silently falls back to SF. They use `Theme()`, never `Theme.current()`, and an icon drawn in code, so renders don't depend on system settings or the macOS version.
+  - **Comparison:** `precision: 0.99`, `perceptualPrecision: 0.98`. A 2 pt badge shift fails exactly the affected cases. On a mismatch the new image is written to `$TMPDIR/TaskbarButtonSnapshotTests/` for comparison.
+  - **Re-recording:** the first run of a new case records its PNG and reports a failure. Delete a PNG to re-record it, then always check the new image by eye before committing.
+  - **Not covered:** the acrylic material. It doesn't render offscreen, so don't snapshot it (see the acrylic ADR).
+  - **CI:** tests aren't run there yet. The references were recorded on the owner's Mac and may differ on the `macos-26` runner.
+  - **Package.resolved:** the CLT and Xcode resolve `xctest-dynamic-overlay`, now renamed `swift-issue-reporting` (same repo), differently. If `Package.resolved` keeps changing between the two toolchains, pin it.
 - **Dev vs production:** production is `/Applications/WinBar.app` (`local.winbar`, from the DMG, self-updating). `build-app.sh` builds **WinBar Dev**: a debug build with bundle ID `local.winbar.dev` and executable `WinBarDev`, so UserDefaults, the login item and TCC grants are separate. Dev-only behaviour is gated by `#if DEBUG` (no updater, its own log folder). `BUNDLE_ONLY=1` (CI) builds the production release bundle.
 - **Never run the binary directly** (`.build/.../WinBar`) for real use. TCC would check permissions against the terminal. Launch the installed app with the script or `open ~/Applications/WinBar\ Dev.app`.
 - `scripts/make-cert.sh` is interactive (keychain password, trust dialog). The user runs it in Terminal.app, not you. It creates the "WinBar Local Signing" identity, which keeps the Accessibility and Screen Recording grants valid across rebuilds.
