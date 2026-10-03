@@ -21,8 +21,9 @@ rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS"
 cp .build/release/WinBar "$APP/Contents/MacOS/WinBar"
 cp Info.plist "$APP/Contents/Info.plist"
+mkdir -p "$APP/Contents/Resources"
+cp Resources/AppIcon.icns "$APP/Contents/Resources/AppIcon.icns"
 if [[ -d Resources/Fonts ]]; then
-    mkdir -p "$APP/Contents/Resources"
     cp -R Resources/Fonts "$APP/Contents/Resources/Fonts"
 fi
 
