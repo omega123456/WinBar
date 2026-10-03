@@ -107,6 +107,12 @@ enum AX {
     }
 
     @discardableResult
+    static func set(_ el: AXUIElement, _ attr: String, _ value: CGSize) throws -> Bool {
+        var v = value
+        return try checkLogged(AXUIElementSetAttributeValue(el, attr as CFString, AXValueCreate(.cgSize, &v)!), "set \(attr)")
+    }
+
+    @discardableResult
     static func perform(_ el: AXUIElement, _ action: String) throws -> Bool {
         try checkLogged(AXUIElementPerformAction(el, action as CFString), "perform \(action)")
     }

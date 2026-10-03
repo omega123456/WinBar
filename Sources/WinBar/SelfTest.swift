@@ -15,6 +15,7 @@ enum SelfTest {
         coordinateConversion()
         displayAssignment()
         visibilityRule()
+        barClamp()
         composition()
         fitting()
         pinOrder()
@@ -42,6 +43,21 @@ enum SelfTest {
               convert(CGRect(x: 0, y: -1440, width: 2560, height: 1440)) == c)
         check("converted window above primary is assigned to C",
               WindowTracker.displayIndex(for: convert(CGRect(x: 200, y: -1000, width: 600, height: 400)), in: [a, b, c]) == 2)
+    }
+
+    private static func barClamp() {
+        let visible = CGRect(x: 0, y: 0, width: 1920, height: 1055) // menu bar 25, Dock on the side
+        let clamp = { WindowTracker.clampedAboveBar($0, screen: a, visible: visible, barHeight: 48) }
+        check("maximized window ends at the bar top", clamp(visible) == CGRect(x: 0, y: 48, width: 1920, height: 1007))
+        check("left-half tile ends at the bar top",
+              clamp(CGRect(x: 0, y: 0, width: 960, height: 1055)) == CGRect(x: 0, y: 48, width: 960, height: 1007))
+        check("window above the bar untouched", clamp(CGRect(x: 100, y: 200, width: 800, height: 600)) == nil)
+        check("window dragged partly under the bar untouched", clamp(CGRect(x: 100, y: 10, width: 800, height: 600)) == nil)
+        check("whole-screen window untouched", clamp(a) == nil)
+        check("window too short to shrink untouched", clamp(CGRect(x: 0, y: 0, width: 300, height: 80)) == nil)
+        check("visible frame already above the bar → untouched",
+              WindowTracker.clampedAboveBar(CGRect(x: 0, y: 74, width: 1920, height: 981), screen: a,
+                                            visible: CGRect(x: 0, y: 74, width: 1920, height: 981), barHeight: 48) == nil)
     }
 
     private static func displayAssignment() {

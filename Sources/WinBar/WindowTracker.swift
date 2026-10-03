@@ -83,7 +83,7 @@ final class WindowTracker {
     private var changed = false
 
     private var onScreenIDs = Set<CGWindowID>()
-    private var screens: [(id: CGDirectDisplayID, frame: CGRect)] = []
+    private var screens: [(id: CGDirectDisplayID, frame: CGRect, visible: CGRect)] = []
     private var elementIDs: [AXUIElement: CGWindowID] = [:]
     private var nextOrder = 0
     private var workspaceTokens: [NSObjectProtocol] = []
@@ -94,7 +94,7 @@ final class WindowTracker {
     private static let windowNotifications = [kAXUIElementDestroyedNotification, kAXTitleChangedNotification,
                                               kAXMovedNotification, kAXResizedNotification,
                                               kAXWindowMiniaturizedNotification, kAXWindowDeminiaturizedNotification]
-    private static let windowAttributes = [kAXTitleAttribute, kAXPositionAttribute, kAXSizeAttribute, kAXMinimizedAttribute]
+    private static let windowAttributes = [kAXTitleAttribute, kAXPositionAttribute, kAXSizeAttribute, kAXMinimizedAttribute, "AXFullScreen"]
 
     private var refcon: UnsafeMutableRawPointer { Unmanaged.passUnretained(self).toOpaque() }
 
@@ -267,7 +267,7 @@ final class WindowTracker {
         flushScheduled = false
         guard isTracking else { return }
         timedOut = []
-        screens = NSScreen.screens.map { (Self.displayID(of: $0), $0.frame) }
+        screens = NSScreen.screens.map { (Self.displayID(of: $0), $0.frame, $0.visibleFrame) }
         // CGWindowList only on: launch, Space change, window creation, de-minimize, unhide.
         if !newElements.isEmpty || !rescanPids.isEmpty { refreshOnScreen = true }
         if refreshOnScreen { onScreenIDs = Self.onScreenWindowIDs() }
@@ -352,7 +352,7 @@ final class WindowTracker {
         }
     }
 
-    /// v = [title, position, size, minimized]
+    /// v = [title, position, size, minimized, fullScreen]
     private func apply(_ v: [CFTypeRef?], to w: TrackedWindow, isNew: Bool) {
         let title = v[0] as? String ?? ""
         if title != w.title {
@@ -362,6 +362,13 @@ final class WindowTracker {
         if let p = AX.point(v[1]), let s = AX.size(v[2]) {
             w.frame = Self.cocoaRect(fromAX: CGRect(origin: p, size: s), primaryHeight: screens.first?.frame.height ?? 0)
             assignDisplay(w, isNew: isNew)
+            if v[4] as? Bool != true, let screen = screens.first(where: { $0.id == w.displayID }),
+               let f = Self.clampedAboveBar(w.frame, screen: screen.frame, visible: screen.visible, barHeight: TaskbarPanel.height) {
+                // Top-left stays put, so the size alone lifts the bottom edge; the resulting kAXResized re-reads it.
+                // Best effort: an app that refuses or times out just stays under the bar.
+                note("clamp above bar id=\(w.id) height \(w.frame.height) -> \(f.height)")
+                _ = try? AX.set(w.element, kAXSizeAttribute, f.size)
+            }
         }
         let minimized = v[3] as? Bool ?? false
         if minimized != w.isMinimized {
@@ -515,6 +522,16 @@ final class WindowTracker {
             if area > bestArea { best = i; bestArea = area }
         }
         return best
+    }
+
+    /// macOS gives no API to reserve screen space, so maximize, Fill, tiling and edge-snapped resizes all reach the
+    /// visible frame's bottom, under the bar. A window whose bottom edge sits exactly there is shrunk to end at the
+    /// bar's top edge; nil → leave it alone (dragged elsewhere, too short, or covering the whole screen).
+    /// ponytail: re-clicking the green button re-maximizes instead of restoring (the app no longer sees it as zoomed).
+    static func clampedAboveBar(_ frame: CGRect, screen: CGRect, visible: CGRect, barHeight: CGFloat) -> CGRect? {
+        let barTop = screen.minY + barHeight
+        guard frame != screen, abs(frame.minY - visible.minY) < 1, frame.minY < barTop, frame.maxY > barTop + barHeight else { return nil }
+        return CGRect(x: frame.minX, y: barTop, width: frame.width, height: frame.maxY - barTop)
     }
 
     /// Requirement 8.
