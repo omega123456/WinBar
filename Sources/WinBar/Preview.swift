@@ -14,6 +14,7 @@ final class PreviewController {
     private var hoverAt: CFTimeInterval = 0, shownAt: CFTimeInterval = 0
     private var freshReady = false         // the hovered window's capture finished before the preview showed
     private var lastHidden: CFTimeInterval = -.infinity
+    private var generation = 0             // bumped on every show/hide so a stale fade-out can't orderOut a re-shown preview
     private var anchor = CGRect.zero       // hovered plate, screen coordinates
     private var screen: NSScreen?
     private var showTimer: Timer?
@@ -62,11 +63,12 @@ final class PreviewController {
         hideTimer = once(Self.hideDelay) { [weak self] in self?.hide() }
     }
 
+    /// Click, drag start, window gone: no fade.
     func hideNow() {
         cancel(&showTimer)
         cancel(&hideTimer)
         hovered = nil
-        hide()
+        hide(animated: false)
     }
 
     /// Window destroyed: drop its thumbnail and its preview.
@@ -76,11 +78,18 @@ final class PreviewController {
         if shown == id || hovered == id { hideNow() }
     }
 
-    private func hide() {
+    private func hide(animated: Bool = true) {
         guard shown != nil else { return }
         shown = nil
         lastHidden = CACurrentMediaTime()
-        panel.orderOut(nil)
+        generation += 1
+        guard animated else { return panel.orderOut(nil) } // completions are async; the next show resets frame and alpha
+        let g = generation
+        // A superseded group completes early, so the guard keeps a re-hover mid-fade on screen.
+        animate(0.083, CAMediaTimingFunction(name: .linear), alpha: 0) { [weak self] in
+            guard let self, generation == g else { return }
+            panel.orderOut(nil)
+        }
     }
 
     private func show(_ id: CGWindowID) {
@@ -96,11 +105,24 @@ final class PreviewController {
         } else {
             thumb = .icon
         }
-        panel.view.set(icon: app.icon, title: w.title.isEmpty ? app.name : w.title, thumb: thumb, theme: Theme.current())
+        let theme = Theme.current()
+        panel.view.set(icon: app.icon, title: w.title.isEmpty ? app.name : w.title, thumb: thumb, theme: theme)
         let f = (screen ?? NSScreen.screens.first)?.frame ?? .zero
         let x = min(max(anchor.midX - PreviewView.size.width / 2, f.minX + 8), f.maxX - PreviewView.size.width - 8)
-        panel.setFrame(NSRect(origin: NSPoint(x: x, y: f.minY + TaskbarPanel.height + 8), size: PreviewView.size), display: true)
-        panel.orderFrontRegardless()
+        let barTop = f.minY + TaskbarPanel.height
+        let target = NSRect(origin: NSPoint(x: x, y: barTop + 8), size: PreviewView.size)
+        let rm = theme.reduceMotion
+        generation += 1
+        if panel.isVisible { // warm switch, possibly mid-fade or mid-slide: carry on from where it is
+            animate(rm ? 0 : 0.167, CAMediaTimingFunction(controlPoints: 0.55, 0.55, 0, 1), frame: target, alpha: 1) // Fluent point-to-point
+        } else {
+            // Cold: a 0 pt strip on the bar's top edge grows to full size; the view is pinned to the panel's top,
+            // so the preview slides up out of the bar. Reduce Motion: fade only.
+            animate(0, nil, frame: rm ? target : NSRect(x: x, y: barTop, width: target.width, height: 0), alpha: rm ? 0 : 1)
+            panel.orderFrontRegardless()
+            animate(rm ? 0.083 : 0.25, rm ? CAMediaTimingFunction(name: .linear) : CAMediaTimingFunction(controlPoints: 0, 0, 0, 1),
+                    frame: target, alpha: 1) { [weak self] in self?.panel.invalidateShadow() } // Fluent direct entrance
+        }
         let kind = switch thumb { case .image: freshReady ? "fresh" : "cached"; case .icon: "icon"; case .unavailable: "unavailable" }
         EventLog.write("preview shown id=\(id) \(kind) \(ms(shownAt - hoverAt)) ms after hover-enter")
         if freshReady && hovered == id { EventLog.write("preview thumbnail displayed id=\(id) 0 ms after shown") }
@@ -157,6 +179,18 @@ final class PreviewController {
 
     // MARK: Helpers
 
+    /// Window-level, not layer-level: only the window frame and alpha clip and fade the behind-window blur.
+    /// A new group retargets an in-flight one from its current value, so every transition is interruptible.
+    private func animate(_ duration: TimeInterval, _ timing: CAMediaTimingFunction?, frame: NSRect? = nil, alpha: CGFloat,
+                         done: (() -> Void)? = nil) {
+        NSAnimationContext.runAnimationGroup({ ctx in
+            ctx.duration = duration
+            ctx.timingFunction = timing
+            if let frame { panel.animator().setFrame(frame, display: true) }
+            panel.animator().alphaValue = alpha
+        }, completionHandler: done)
+    }
+
     private func once(_ delay: TimeInterval, _ body: @escaping () -> Void) -> Timer {
         let t = Timer(timeInterval: delay, repeats: false) { _ in body() }
         RunLoop.main.add(t, forMode: .common)
@@ -176,7 +210,7 @@ final class PreviewPanel: NSPanel {
     let view = PreviewView(frame: NSRect(origin: .zero, size: PreviewView.size))
 
     init() {
-        super.init(contentRect: view.frame, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: true)
+        super.init(contentRect: view.frame, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false) // deferred creation stalls the first slide ~100 ms
         level = NSWindow.Level(rawValue: NSWindow.Level.statusBar.rawValue + 1)
         collectionBehavior = [.canJoinAllSpaces, .stationary, .ignoresCycle]
         hidesOnDeactivate = false
@@ -185,7 +219,10 @@ final class PreviewPanel: NSPanel {
         hasShadow = true // ponytail: system window shadow, not the exact 0/8/32 16% (needs a transparent margin over the bar)
         isReleasedWhenClosed = false
         animationBehavior = .none
-        contentView = view
+        let root = NSView(frame: view.frame)
+        view.autoresizingMask = .minYMargin // pinned to the top: growing the frame upward slides the preview out of the bar
+        root.addSubview(view)
+        contentView = root
     }
 
     override var canBecomeKey: Bool { false }
