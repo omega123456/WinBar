@@ -1,1 +1,1 @@
-See the attached WinBar zip. Installed copies update themselves.
+Open the WinBar .dmg and drag WinBar to Applications. Installed copies update themselves.
