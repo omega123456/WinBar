@@ -73,6 +73,16 @@ extension Desktop {
             #expect(h.log.contains("action close 5002"))
             #expect(close.accessibilityPerformPress()) // nothing shown: nothing to close
             view.mouseDown(with: mouse(.leftMouseDown, at: .zero, in: view))
+            view.mouseUp(with: mouse(.leftMouseUp, at: .zero, in: view)) // nothing shown: nothing to focus
+
+            // A body click hides the preview and focuses the window; a release outside does nothing.
+            p.hoverEnter(5001, plate: plate, screen: h.main)
+            #expect(panel.isVisible)
+            view.mouseUp(with: mouse(.leftMouseUp, at: NSPoint(x: -50, y: 5), in: view))
+            #expect(panel.isVisible)
+            view.mouseUp(with: mouse(.leftMouseUp, at: NSPoint(x: 5, y: 5), in: view))
+            #expect(!panel.isVisible)
+            #expect(h.log.contains("action focus 5001"))
             view.rightMouseDown(with: mouse(.rightMouseDown, at: .zero, in: view))
             #expect(view.acceptsFirstMouse(for: nil))
             view.updateTrackingAreas()

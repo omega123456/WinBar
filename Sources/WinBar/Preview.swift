@@ -33,6 +33,11 @@ final class PreviewController {
             hideNow()
             tracker.close(id)
         }
+        panel.view.onActivate = { [weak self] in
+            guard let self, let id = shown else { return }
+            hideNow()
+            tracker.focus(id)
+        }
     }
 
     /// Requirement 32: no capture is attempted (and no prompt re-triggered) while this is false.
@@ -246,6 +251,7 @@ final class PreviewView: NSView {
 
     var onHover: ((Bool) -> Void)?
     var onClose: (() -> Void)?
+    var onActivate: (() -> Void)?
 
     private let effect = NSVisualEffectView()
     private let luminosity = NSView()       // luminosityBlendMode layer over the blur, as on the bar
@@ -382,7 +388,10 @@ final class PreviewView: NSView {
     // The X is visible only while the pointer is over the preview.
     override func mouseEntered(with event: NSEvent) { close.setVisible(true); onHover?(true) }
     override func mouseExited(with event: NSEvent) { close.setVisible(false); onHover?(false) }
-    override func mouseDown(with event: NSEvent) {} // body clicks are swallowed
+    override func mouseDown(with event: NSEvent) {}
+    override func mouseUp(with event: NSEvent) { // a body click focuses the window, as on Win11
+        if bounds.contains(convert(event.locationInWindow, from: nil)) { onActivate?() }
+    }
     override func rightMouseDown(with event: NSEvent) {}
 }
 
