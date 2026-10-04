@@ -31,10 +31,10 @@ extension Desktop {
             // Overlapping pauses: the poll resumes only when all have ended.
             h.ax.attrs[textEdit]!["AXStatusLabel"] = "!" as CFString
             h.ws.post(NSWorkspace.sessionDidResignActiveNotification)
-            s.perform(Selector(("screenLocked")))
+            s.perform(NSSelectorFromString("screenLocked"))
             h.ws.post(NSWorkspace.sessionDidBecomeActiveNotification)
             #expect(s.badges.isEmpty)
-            s.perform(Selector(("screenUnlocked")))
+            s.perform(NSSelectorFromString("screenUnlocked"))
             #expect(s.badges == ["com.apple.TextEdit": .alert])
 
             // Launches refresh the item list (coalesced, 0.5 s later); known items are kept.

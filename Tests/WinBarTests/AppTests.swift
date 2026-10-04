@@ -31,11 +31,11 @@ extension Desktop {
 
             // The system's Accessibility notification re-checks after 0.25 s.
             h.ax.trusted = true
-            d.perform(Selector(("accessibilityChanged")))
+            d.perform(NSSelectorFromString("accessibilityChanged"))
             await settle(0.4)
             #expect(d.tracker.isTracking)
             h.ws.contrast = true
-            d.perform(Selector(("themeChanged")))
+            d.perform(NSSelectorFromString("themeChanged"))
 
             d.signals.stop()
             d.tracker.stop()

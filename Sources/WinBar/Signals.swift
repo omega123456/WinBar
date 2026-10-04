@@ -55,7 +55,7 @@ struct Attribution: Equatable {
 }
 
 /// Per-app badge, progress and attention. Main thread only; emits `onChange` (the bar re-renders, diffed).
-final class Signals: NSObject {
+final class Signals: NSObject, @unchecked Sendable { // off-main callbacks only hop to main via onMain
     var onChange: (() -> Void)?
     private(set) var badges: [String: Badge] = [:]            // bundle ID →
     private(set) var progress: [String: ProgressState] = [:]  // bundle ID →
@@ -137,7 +137,7 @@ final class Signals: NSObject {
         // Downloads prompt (requirement 33). That call blocks until the prompt is answered: off the main thread,
         // then subscribe on main. Denied → progress is simply absent.
         let folder = Self.downloadsFolder
-        DispatchQueue.global(qos: .utility).async {
+        DispatchQueue.global(qos: .utility).async { [weak self] in
             let readable = (try? FileManager.default.contentsOfDirectory(atPath: folder.path)) != nil
             DispatchQueue.main.async { [weak self] in
                 EventLog.write("downloads folder \(readable ? "readable" : "not readable")")
@@ -145,7 +145,7 @@ final class Signals: NSObject {
                 subscriber = Progress.addSubscriber(forFileURL: folder) { [weak self] p in
                     let id = ObjectIdentifier(p)
                     Self.onMain { self?.downloadAppeared(p) }
-                    return { Self.onMain { self?.downloadGone(id) } }
+                    return { [weak self] in Self.onMain { self?.downloadGone(id) } }
                 }
             }
         }

@@ -32,7 +32,7 @@ final class FakeScreen: NSScreen {
     override var deviceDescription: [NSDeviceDescriptionKey: Any] { [NSDeviceDescriptionKey("NSScreenNumber"): NSNumber(value: id)] }
 }
 
-final class FakeApp: NSRunningApplication {
+final class FakeApp: NSRunningApplication, @unchecked Sendable {
     let pid: pid_t
     let bundle: String?
     let name: String?
