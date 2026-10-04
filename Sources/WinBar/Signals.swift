@@ -89,12 +89,16 @@ final class Signals: NSObject {
     private var progressFlushScheduled = false
     private var lastProgressFlush: CFAbsoluteTime = 0
 
+    /// Tests point these elsewhere: a real Downloads folder and real LaunchServices events.
+    static var downloadsFolder = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Downloads", isDirectory: true)
+    static var pidOfASN = LaunchServicesSPI.pid(of:)
+
     // MARK: Lifecycle (runs while Accessibility is trusted)
 
     func start() {
         guard !running else { return }
         running = true
-        let ws = NSWorkspace.shared.notificationCenter
+        let ws = Env.workspace.notificationCenter
         func on(_ name: Notification.Name, _ body: @escaping (Notification) -> Void) {
             tokens.append(ws.addObserver(forName: name, object: nil, queue: .main, using: body))
         }
@@ -132,7 +136,7 @@ final class Signals: NSObject {
         // The subscription is checked silently on the service side, so the folder is touched once to show the
         // Downloads prompt (requirement 33). That call blocks until the prompt is answered: off the main thread,
         // then subscribe on main. Denied → progress is simply absent.
-        let folder = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Downloads", isDirectory: true)
+        let folder = Self.downloadsFolder
         DispatchQueue.global(qos: .utility).async {
             let readable = (try? FileManager.default.contentsOfDirectory(atPath: folder.path)) != nil
             DispatchQueue.main.async { [weak self] in
@@ -150,7 +154,7 @@ final class Signals: NSObject {
     func stop() {
         guard running else { return }
         running = false
-        tokens.forEach { NSWorkspace.shared.notificationCenter.removeObserver($0) }
+        tokens.forEach { Env.workspace.notificationCenter.removeObserver($0) }
         tokens = []
         DistributedNotificationCenter.default().removeObserver(self)
         if let subscriber { Progress.removeSubscriber(subscriber) }
@@ -257,11 +261,11 @@ final class Signals: NSObject {
 
     // MARK: Attention
 
-    private func attentionEvent(_ asn: CFTypeRef, _ wants: Bool) {
+    func attentionEvent(_ asn: CFTypeRef, _ wants: Bool) {
         guard running else { return }
         let now = CFAbsoluteTimeGetCurrent()
         if wants {
-            guard let pid = LaunchServicesSPI.pid(of: asn) else {
+            guard let pid = Self.pidOfASN(asn) else {
                 EventLog.write("attention request ignored: pid lookup failed")
                 return
             }
@@ -284,7 +288,7 @@ final class Signals: NSObject {
     private func updateAttention() {
         attentionTimer?.invalidate()
         attentionTimer = nil
-        let now = CFAbsoluteTimeGetCurrent(), rm = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+        let now = CFAbsoluteTimeGetCurrent(), rm = Env.workspace.accessibilityDisplayShouldReduceMotion
         var next: [pid_t: AttentionState] = [:]
         var wake: CFAbsoluteTime?
         for (pid, r) in requests {
@@ -308,7 +312,7 @@ final class Signals: NSObject {
 
     private func downloadAppeared(_ p: Progress) {
         guard running else { return }
-        let front = NSWorkspace.shared.frontmostApplication?.bundleIdentifier
+        let front = Env.workspace.frontmostApplication?.bundleIdentifier
         let d = Download(p, Self.attribute(nil, agentApp: agentApp(p), frontmost: front))
         let changed: () -> Void = { [weak self] in Self.onMain { self?.progressChanged() } } // KVO: any thread
         d.observations = [p.observe(\.fractionCompleted) { _, _ in changed() },
@@ -361,7 +365,7 @@ final class Signals: NSObject {
     /// The running app named by the file's quarantine agent, if readable.
     private func agentApp(_ p: Progress) -> String? {
         guard let url = Self.fileURL(p), let agent = Self.quarantineAgent(Self.xattr(url, "com.apple.quarantine") ?? "") else { return nil }
-        return NSWorkspace.shared.runningApplications.first { $0.localizedName == agent }?.bundleIdentifier
+        return Env.workspace.runningApplications.first { $0.localizedName == agent }?.bundleIdentifier
     }
 
     /// Publishers set userInfo[.fileURLKey]; `fileURL` came back nil on the subscriber side (verified 2026-10-03).

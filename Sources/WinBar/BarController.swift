@@ -49,6 +49,8 @@ final class BarController {
 
     static let slot: CGFloat = 44, maxWidth: CGFloat = 160, minShrink: CGFloat = 96
     private static let pinsKey = "pinnedBundleIDs"
+    /// Modal menu tracking; returns when the menu closes. Tests replace it to pick an item without a real menu.
+    static var trackMenu: (NSMenu, NSPoint) -> Void = { _ = $0.popUp(positioning: nil, at: $1, in: nil) }
 
     var access = Access.untrusted { didSet { if access != oldValue { render() } } }
     private(set) var pins: [String]
@@ -70,11 +72,11 @@ final class BarController {
         self.preview = preview
         dots = TaskbarButton.dots(color: theme.text)
         var seen = Set<String>()
-        pins = (UserDefaults.standard.stringArray(forKey: Self.pinsKey) ?? []).filter { seen.insert($0).inserted }
+        pins = (Env.defaults.stringArray(forKey: Self.pinsKey) ?? []).filter { seen.insert($0).inserted }
         pins.removeAll { appInfo($0) == nil } // no longer installed
         savePins()
-        if let pid = NSWorkspace.shared.frontmostApplication?.processIdentifier { lastActivated[pid] = CFAbsoluteTimeGetCurrent() }
-        tokens.append(NSWorkspace.shared.notificationCenter.addObserver(
+        if let pid = Env.workspace.frontmostApplication?.processIdentifier { lastActivated[pid] = CFAbsoluteTimeGetCurrent() }
+        tokens.append(Env.workspace.notificationCenter.addObserver(
             forName: NSWorkspace.didActivateApplicationNotification, object: nil, queue: .main
         ) { [weak self] n in
             if let app = n.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication {
@@ -101,7 +103,7 @@ final class BarController {
     func render() {
         if panels.values.contains(where: \.isDragging) { return } // the drop re-renders
         syncPanels()
-        let mainID = NSScreen.screens.first.map(WindowTracker.displayID)
+        let mainID = Env.screens().first.map(WindowTracker.displayID)
         let trusted = access == .trusted
         let windows = tracker.visibleWindows.map {
             BarWindow(id: $0.id, pid: $0.pid, bundleID: tracker.apps[$0.pid]?.bundleID, displayID: $0.displayID)
@@ -169,7 +171,7 @@ final class BarController {
     /// One panel per display ID; re-framed on parameter changes, created/destroyed only on connect/disconnect.
     private func syncPanels() {
         var live = Set<CGDirectDisplayID>()
-        for screen in NSScreen.screens {
+        for screen in Env.screens() {
             let id = WindowTracker.displayID(of: screen)
             live.insert(id)
             if let panel = panels[id] {
@@ -222,10 +224,10 @@ final class BarController {
     /// Installed app info, cached per bundle ID. nil → not installed.
     private func appInfo(_ bundleID: String) -> (url: URL, name: String, icon: NSImage)? {
         if let i = installed[bundleID] { return i }
-        guard let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleID) else { return nil }
+        guard let url = Env.workspace.urlForApplication(withBundleIdentifier: bundleID) else { return nil }
         var name = FileManager.default.displayName(atPath: url.path)
         if name.hasSuffix(".app") { name.removeLast(4) }
-        let info = (url, name, NSWorkspace.shared.icon(forFile: url.path))
+        let info = (url, name, Env.workspace.icon(forFile: url.path))
         installed[bundleID] = info
         return info
     }
@@ -237,14 +239,14 @@ final class BarController {
     }
 
     private func open(_ bundleID: String) {
-        guard let url = appInfo(bundleID)?.url ?? NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleID) else {
+        guard let url = appInfo(bundleID)?.url ?? Env.workspace.urlForApplication(withBundleIdentifier: bundleID) else {
             EventLog.write("pinned app \(bundleID) no longer installed: unpinned")
             setPinned(bundleID, false)
             return
         }
         EventLog.write("action open \(bundleID)")
         // Launches, or sends a reopen event to a running app (which normally opens a window).
-        NSWorkspace.shared.openApplication(at: url, configuration: NSWorkspace.OpenConfiguration())
+        Env.workspace.openApplication(at: url, configuration: NSWorkspace.OpenConfiguration())
     }
 
     private func setPinned(_ bundleID: String, _ on: Bool) {
@@ -254,7 +256,7 @@ final class BarController {
         render()
     }
 
-    private func savePins() { UserDefaults.standard.set(pins, forKey: Self.pinsKey) }
+    private func savePins() { Env.defaults.set(pins, forKey: Self.pinsKey) }
 
     // MARK: Actions
 
@@ -341,7 +343,7 @@ final class BarController {
         menu.add("Check for Updates…") { Updater.check(manual: true) }
         if !PreviewController.hasPermission {
             menu.add("Enable Window Previews…") {
-                NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture")!)
+                Env.workspace.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture")!)
             }
         }
         menu.addItem(.separator())
@@ -373,7 +375,7 @@ final class BarController {
     }
 
     private func popUp(_ menu: NSMenu, left: CGFloat, bottom: CGFloat, on panel: NSWindow) {
-        let visibleMinY = (panel.screen ?? NSScreen.screens.first)?.visibleFrame.minY ?? 0
+        let visibleMinY = (panel.screen ?? Env.screens().first)?.visibleFrame.minY ?? 0
         // Clicks on the menu come from BarClickTap (a native one would activate WinBar and end tracking first),
         // so the item under the pointer is fired here once tracking ends.
         let highlight = MenuHighlight()
@@ -386,8 +388,7 @@ final class BarController {
         }
         BarClickTap.isPaused = true // popUp returns when tracking ends
         defer { BarClickTap.isPaused = false; BarClickTap.onMenuClick = nil }
-        menu.popUp(positioning: nil, at: Self.menuLocation(left: left, bottom: bottom, menuHeight: menu.size.height,
-                                                           visibleMinY: visibleMinY), in: nil)
+        Self.trackMenu(menu, Self.menuLocation(left: left, bottom: bottom, menuHeight: menu.size.height, visibleMinY: visibleMinY))
         chosen?.handler()
     }
 

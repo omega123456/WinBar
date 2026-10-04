@@ -40,15 +40,6 @@ import Testing
         }
     }
 
-    /// The app bundle registers Selawik through ATSApplicationFontsPath; tests must do it before
-    /// `Fonts.label` is first read, or it silently falls back to the system font.
-    private static let fonts: Void = {
-        let dir = URL(fileURLWithPath: #filePath).deletingLastPathComponent().appendingPathComponent("../../Resources/Fonts")
-        for name in ["Selawik-Regular", "Selawik-Semibold"] {
-            CTFontManagerRegisterFontsForURL(dir.appendingPathComponent("\(name).ttf") as CFURL, .process, nil)
-        }
-    }()
-
     /// Fixed artwork: real app icons and SF Symbols change between macOS versions.
     static let icon = NSImage(size: NSSize(width: 32, height: 32), flipped: false) { r in
         NSColor(srgbRed: 0.23, green: 0.59, blue: 0.87, alpha: 1).setFill()
@@ -56,7 +47,7 @@ import Testing
         return true
     }
 
-    init() { _ = Self.fonts }
+    init() { _ = fontsRegistered }
 
     @Test(arguments: Case.allCases)
     func state(_ c: Case) {

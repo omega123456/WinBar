@@ -9,7 +9,8 @@ WinBar is a Windows 11 taskbar ("Combine taskbar buttons: Never") for macOS 26 o
 ```sh
 swift build                    # debug build (compile check)
 swift run WinBar --self-test   # pure-logic checks; exits before any UI, non-zero on failure
-./scripts/test.sh              # snapshot tests (Tests/WinBarTests), offscreen; extra args go to swift test (--filter …)
+./scripts/test.sh              # snapshot tests + SelfTest (Tests/WinBarTests), offscreen; extra args go to swift test (--filter …)
+./scripts/coverage.sh          # test.sh with LLVM line coverage of Sources/WinBar; fails below COVERAGE_MIN (default 90); COVERAGE_HTML=1 → .build/xcode/coverage/index.html
 ./scripts/build-app.sh         # debug "WinBar Dev" build → sign → quit running WinBar (prod too) → install to ~/Applications → launch
 ./scripts/build-app.sh --log-events   # extra args are passed to WinBar
 tail -f ~/Library/Logs/WinBar\ Dev/events.log
@@ -17,8 +18,8 @@ pkill -x WinBarDev; open /Applications/WinBar.app   # back to production
 ./scripts/release.sh            # (user runs it) bump Info.plist version, verify, commit, tag vX.Y.Z, push → .github/workflows/release.yml
 ```
 
-- **Sandbox:** SwiftPM fails inside the Claude Code Bash sandbox. `.claude/settings.local.json` excludes `swift build`, `swift run`, `swift package`, `./scripts/build-app.sh` and `./scripts/test.sh`, but only when the command is exactly one of these. Don't pipe, chain or prefix them (`|`, `&&`, `cd … &&`).
-- **Two suites.** `--self-test` covers the pure logic and needs only the CLT. To add coverage, add a `check(...)` in `Sources/WinBar/SelfTest.swift`. It counts failures explicitly, because `assert` is compiled out of release builds.
+- **Sandbox:** SwiftPM fails inside the Claude Code Bash sandbox. `.claude/settings.local.json` excludes `swift build`, `swift run`, `swift package`, `./scripts/build-app.sh`, `./scripts/test.sh` and `./scripts/coverage.sh`, but only when the command is exactly one of these. Don't pipe, chain or prefix them (`|`, `&&`, `cd … &&`).
+- **Two suites.** `--self-test` covers the pure logic and needs only the CLT. To add coverage, add a `check(...)` in `Sources/WinBar/SelfTest.swift`. It counts failures explicitly, because `assert` is compiled out of release builds. `Tests/WinBarTests/SelfTests.swift` also runs it under `swift test`, so coverage counts it. `SelfTest.swift` itself is excluded from the coverage total.
 - **Snapshot tests** (`Tests/WinBarTests`, Swift Testing + swift-snapshot-testing) render views offscreen with `CALayer.render(in:)` and compare them with the PNGs in `__Snapshots__`. Nothing is shown on screen and no TCC grant is needed.
   - **Toolchain:** the library imports XCTest, which only Xcode ships. So `scripts/test.sh` runs `swift test` with `DEVELOPER_DIR` set to Xcode (Swift 6.4) and its own `.build/xcode` scratch path. `xcode-select` stays on the CLT (6.3.1) for app builds. Xcode's license must be accepted, which needs sudo, so the user runs it.
   - **Coverage:** `TaskbarButtonSnapshotTests` has one parameterized test over 14 states. They are the window, active, icon-only, launcher, app item and overflow buttons; the 4 badges; progress and paused progress; attention; and a long title. References are named `TaskbarButton.<case>.png`. To add a state, add a `Case` and its `content`.
@@ -28,6 +29,11 @@ pkill -x WinBarDev; open /Applications/WinBar.app   # back to production
   - **Not covered:** the acrylic material. It doesn't render offscreen, so don't snapshot it (see the acrylic ADR).
   - **CI:** tests aren't run there yet. The references were recorded on the owner's Mac and may differ on the `macos-26` runner.
   - **Package.resolved:** the CLT and Xcode resolve `xctest-dynamic-overlay`, now renamed `swift-issue-reporting` (same repo), differently. If `Package.resolved` keeps changing between the two toolchains, pin it.
+- **Desktop tests** (`Tests/WinBarTests`, suite `Desktop`, serialized) drive the real tracker, signals, bars, preview, click tap, app delegate and updater with fakes behind test seams. Nothing touches the real desktop, apps, defaults, network or TCC.
+  - **Seams:** `Env.workspace/screens/defaults`, `AX.backend` (every AX C call, plus trust), `WindowTracker.onScreenWindowIDs/managedDisplaySpaces`, `BarController.trackMenu`, `PreviewController.checkPermission/captureWindow`, `Signals.downloadsFolder/pidOfASN`, and `Updater.isInstallable/bundleURL/notice/ask/verify/relaunch`. Production never reassigns them. New code that reaches outside the process goes through `Env` or a seam like these.
+  - **Fakes** (`Fakes.swift`): offscreen `FakeScreen`s (bars at x −20000), `FakeApp`, `FakeWorkspace` with its own notification center, an in-memory `FakeAX`, and `Harness`, which installs everything fresh per test. The network is stubbed with a `URLProtocol` (`UpdaterTests`).
+  - **Async:** a `@MainActor` test waits with `await settle(seconds)`, which lets main-queue flushes and timers run. A nested run-loop spin does not drain the main queue.
+  - **Don't** call `NSButton.performClick` in tests: it stops the main run loop, and the runner then exits 0 mid-run. Send the action instead.
 - **Dev vs production:** production is `/Applications/WinBar.app` (`local.winbar`, from the DMG, self-updating). `build-app.sh` builds **WinBar Dev**: a debug build with bundle ID `local.winbar.dev` and executable `WinBarDev`, so UserDefaults, the login item and TCC grants are separate. Dev-only behaviour is gated by `#if DEBUG` (no updater, its own log folder). `BUNDLE_ONLY=1` (CI) builds the production release bundle.
 - **Never run the binary directly** (`.build/.../WinBar`) for real use. TCC would check permissions against the terminal. Launch the installed app with the script or `open ~/Applications/WinBar\ Dev.app`.
 - `scripts/make-cert.sh` is interactive (keychain password, trust dialog). The user runs it in Terminal.app, not you. It creates the "WinBar Local Signing" identity, which keeps the Accessibility and Screen Recording grants valid across rebuilds.

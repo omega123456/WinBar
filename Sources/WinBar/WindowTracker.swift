@@ -110,7 +110,7 @@ final class WindowTracker {
         guard !isTracking else { return }
         isTracking = true
         EventLog.write("tracker start")
-        let ws = NSWorkspace.shared
+        let ws = Env.workspace
         let nc = ws.notificationCenter
         func on(_ name: Notification.Name, _ body: @escaping (NSRunningApplication?) -> Void) {
             workspaceTokens.append(nc.addObserver(forName: name, object: nil, queue: .main) { n in
@@ -150,7 +150,7 @@ final class WindowTracker {
     func stop() {
         guard isTracking else { return }
         isTracking = false
-        workspaceTokens.forEach { NSWorkspace.shared.notificationCenter.removeObserver($0); NotificationCenter.default.removeObserver($0) }
+        workspaceTokens.forEach { Env.workspace.notificationCenter.removeObserver($0); NotificationCenter.default.removeObserver($0) }
         workspaceTokens = []
         for app in apps.values { if let o = app.observer { AX.removeObserver(o) } }
         apps = [:]; windows = [:]; elementIDs = [:]; activeWindowID = nil
@@ -246,8 +246,7 @@ final class WindowTracker {
         guard isTracking else { return }
         // The app-level registration reports every destroyed element of the app; only tracked windows matter.
         if notification == kAXUIElementDestroyedNotification && elementIDs[element] == nil { return }
-        var pid: pid_t = 0
-        AXUIElementGetPid(element, &pid)
+        let pid = AX.pid(element)
         EventLog.write("ax \(notification) pid=\(pid)")
         switch notification {
         case kAXWindowCreatedNotification:
@@ -276,7 +275,7 @@ final class WindowTracker {
         flushScheduled = false
         guard isTracking else { return }
         timedOut = []
-        screens = NSScreen.screens.map { (Self.displayID(of: $0), $0.frame, $0.visibleFrame) }
+        screens = Env.screens().map { (Self.displayID(of: $0), $0.frame, $0.visibleFrame) }
         // CGWindowList only on: launch, Space change, window creation, de-minimize, unhide.
         if !newElements.isEmpty || !rescanPids.isEmpty { refreshOnScreen = true }
         if refreshOnScreen {
@@ -298,7 +297,7 @@ final class WindowTracker {
         }
         // Activation can beat observer attachment (retries up to 1.75 s), leaving the focused window unread:
         // re-read the frontmost app's focus whenever its windows were (re)scanned.
-        if let front = NSWorkspace.shared.frontmostApplication?.processIdentifier, rescanPids.contains(front) {
+        if let front = Env.workspace.frontmostApplication?.processIdentifier, rescanPids.contains(front) {
             focusPids.insert(front)
         }
         for pid in focusPids {
@@ -410,7 +409,7 @@ final class WindowTracker {
     }
 
     private func updateFocus(_ app: TrackedApp) throws {
-        guard NSWorkspace.shared.frontmostApplication?.processIdentifier == app.pid else { return }
+        guard Env.workspace.frontmostApplication?.processIdentifier == app.pid else { return }
         let id = try AX.element(app.element, kAXFocusedWindowAttribute).flatMap(AX.windowID)
         if let id, let w = windows[id] { w.lastFocused = CFAbsoluteTimeGetCurrent() }
         if id != activeWindowID {
@@ -560,7 +559,8 @@ final class WindowTracker {
     }
 
     /// Private SkyLight SPI (verified on macOS 26), resolved with dlsym; empty if missing, so the bar stays everywhere.
-    private static func managedDisplaySpaces() -> [[String: Any]] {
+    /// A variable so tests can fake it, like `onScreenWindowIDs`.
+    static var managedDisplaySpaces: () -> [[String: Any]] = {
         typealias Conn = @convention(c) () -> Int32
         typealias Copy = @convention(c) (Int32) -> Unmanaged<CFArray>?
         let h = UnsafeMutableRawPointer(bitPattern: -2) // RTLD_DEFAULT
@@ -583,7 +583,7 @@ final class WindowTracker {
         (screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber)?.uint32Value ?? 0
     }
 
-    private static func onScreenWindowIDs() -> Set<CGWindowID> {
+    static var onScreenWindowIDs: () -> Set<CGWindowID> = {
         let info = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]] ?? []
         return Set(info.compactMap { ($0[kCGWindowNumber as String] as? NSNumber)?.uint32Value })
     }

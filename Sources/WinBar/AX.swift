@@ -14,6 +14,42 @@ enum AX {
     /// Called (synchronously) whenever any AX call reports "API disabled".
     static var onAPIDisabled: (() -> Void)?
 
+    /// The Accessibility C calls everything below goes through. Tests replace it with a fake Accessibility world.
+    struct Backend {
+        var copy: (AXUIElement, String) -> (AXError, CFTypeRef?) = { el, attr in
+            var value: CFTypeRef?
+            return (AXUIElementCopyAttributeValue(el, attr as CFString, &value), value)
+        }
+        var copyMultiple: (AXUIElement, [String]) -> (AXError, CFArray?) = { el, attrs in
+            var out: CFArray?
+            return (AXUIElementCopyMultipleAttributeValues(el, attrs as CFArray, AXCopyMultipleAttributeOptions(rawValue: 0), &out), out)
+        }
+        var set: (AXUIElement, String, CFTypeRef) -> AXError = { AXUIElementSetAttributeValue($0, $1 as CFString, $2) }
+        var perform: (AXUIElement, String) -> AXError = { AXUIElementPerformAction($0, $1 as CFString) }
+        var windowID: (AXUIElement) -> CGWindowID? = { el in
+            var id: CGWindowID = 0
+            guard let fn = getWindowFn, fn(el, &id) == .success, id != 0 else { return nil }
+            return id
+        }
+        var pid: (AXUIElement) -> pid_t = { el in
+            var pid: pid_t = 0
+            AXUIElementGetPid(el, &pid)
+            return pid
+        }
+        var createObserver: (pid_t, AXObserverCallback) -> AXObserver? = { pid, callback in
+            var observer: AXObserver?
+            return AXObserverCreate(pid, callback, &observer) == .success ? observer : nil
+        }
+        var addNotification: (AXObserver, AXUIElement, String, UnsafeMutableRawPointer) -> AXError = {
+            AXObserverAddNotification($0, $1, $2 as CFString, $3)
+        }
+        var isTrusted: (_ prompt: Bool) -> Bool = { AXIsProcessTrustedWithOptions(["AXTrustedCheckOptionPrompt": $0] as CFDictionary) }
+    }
+    static var backend = Backend()
+
+    static func isTrusted(_ prompt: Bool) -> Bool { backend.isTrusted(prompt) }
+    static func pid(_ el: AXUIElement) -> pid_t { backend.pid(el) }
+
     @discardableResult
     static func check(_ err: AXError) throws -> Bool {
         switch err {
@@ -35,19 +71,15 @@ enum AX {
         return unsafeBitCast(sym, to: GetWindowFn.self)
     }()
 
-    static var isWindowIDAvailable: Bool { getWindowFn != nil }
+    static var isWindowIDAvailable = getWindowFn != nil
 
-    static func windowID(_ el: AXUIElement) -> CGWindowID? {
-        var id: CGWindowID = 0
-        guard let fn = getWindowFn, fn(el, &id) == .success, id != 0 else { return nil }
-        return id
-    }
+    static func windowID(_ el: AXUIElement) -> CGWindowID? { backend.windowID(el) }
 
     // MARK: Attribute reads
 
     static func raw(_ el: AXUIElement, _ attr: String) throws -> CFTypeRef? {
-        var value: CFTypeRef?
-        return try check(AXUIElementCopyAttributeValue(el, attr as CFString, &value)) ? value : nil
+        let (err, value) = backend.copy(el, attr)
+        return try check(err) ? value : nil
     }
 
     static func string(_ el: AXUIElement, _ attr: String) throws -> String? { try raw(el, attr) as? String }
@@ -60,8 +92,7 @@ enum AX {
     /// Several attributes in one IPC round trip. nil if the whole call failed;
     /// individual attributes that failed come back as nil entries.
     static func values(_ el: AXUIElement, _ attrs: [String]) throws -> [CFTypeRef?]? {
-        var out: CFArray?
-        let err = AXUIElementCopyMultipleAttributeValues(el, attrs as CFArray, AXCopyMultipleAttributeOptions(rawValue: 0), &out)
+        let (err, out) = backend.copyMultiple(el, attrs)
         guard try check(err), let array = out as? [AnyObject], array.count == attrs.count else { return nil }
         return array.map { v in
             if CFGetTypeID(v) == AXValueGetTypeID(), AXValueGetType(unsafeBitCast(v, to: AXValue.self)) == .axError { return nil }
@@ -91,8 +122,7 @@ enum AX {
 
     /// True if the element no longer exists.
     static func isDestroyed(_ el: AXUIElement) throws -> Bool {
-        var value: CFTypeRef?
-        let err = AXUIElementCopyAttributeValue(el, kAXRoleAttribute as CFString, &value)
+        let err = backend.copy(el, kAXRoleAttribute).0
         if err == .invalidUIElement { return true }
         try check(err)
         return false
@@ -103,18 +133,18 @@ enum AX {
     /// Writes and actions log every failure (ordinary ones would otherwise vanish as `false`).
     @discardableResult
     static func set(_ el: AXUIElement, _ attr: String, _ value: Bool) throws -> Bool {
-        try checkLogged(AXUIElementSetAttributeValue(el, attr as CFString, (value ? kCFBooleanTrue : kCFBooleanFalse)!), "set \(attr)")
+        try checkLogged(backend.set(el, attr, (value ? kCFBooleanTrue : kCFBooleanFalse)!), "set \(attr)")
     }
 
     @discardableResult
     static func set(_ el: AXUIElement, _ attr: String, _ value: CGSize) throws -> Bool {
         var v = value
-        return try checkLogged(AXUIElementSetAttributeValue(el, attr as CFString, AXValueCreate(.cgSize, &v)!), "set \(attr)")
+        return try checkLogged(backend.set(el, attr, AXValueCreate(.cgSize, &v)!), "set \(attr)")
     }
 
     @discardableResult
     static func perform(_ el: AXUIElement, _ action: String) throws -> Bool {
-        try checkLogged(AXUIElementPerformAction(el, action as CFString), "perform \(action)")
+        try checkLogged(backend.perform(el, action), "perform \(action)")
     }
 
     private static func checkLogged(_ err: AXError, _ what: String) throws -> Bool {
@@ -126,8 +156,7 @@ enum AX {
 
     /// Creates an observer for `pid` and attaches it to the main run loop (common modes).
     static func makeObserver(_ pid: pid_t, _ callback: AXObserverCallback) -> AXObserver? {
-        var observer: AXObserver?
-        guard AXObserverCreate(pid, callback, &observer) == .success, let observer else { return nil }
+        guard let observer = backend.createObserver(pid, callback) else { return nil }
         CFRunLoopAddSource(CFRunLoopGetMain(), AXObserverGetRunLoopSource(observer), .commonModes)
         return observer
     }
@@ -138,7 +167,7 @@ enum AX {
 
     @discardableResult
     static func observe(_ observer: AXObserver, _ el: AXUIElement, _ notification: String, _ refcon: UnsafeMutableRawPointer) throws -> Bool {
-        let err = AXObserverAddNotification(observer, el, notification as CFString, refcon)
+        let err = backend.addNotification(observer, el, notification, refcon)
         return err == .notificationAlreadyRegistered ? true : try check(err)
     }
 

@@ -15,6 +15,14 @@ enum WinBarMain {
     }
 }
 
+/// What WinBar observes and acts on outside itself. Tests substitute fakes (Tests/WinBarTests) so they never touch
+/// the real desktop, apps or defaults; production never changes these.
+enum Env {
+    static var workspace = NSWorkspace.shared
+    static var screens: () -> [NSScreen] = { NSScreen.screens }
+    static var defaults = UserDefaults.standard
+}
+
 /// `--log-events`: millisecond-timestamped plain-text lines in ~/Library/Logs/WinBar/events.log
 /// (WinBar Dev: ~/Library/Logs/WinBar Dev/events.log), cleared at each launch. The file only exists while the flag is used.
 enum EventLog {
@@ -24,7 +32,7 @@ enum EventLog {
     #else
     private static let folder = "WinBar"
     #endif
-    private static let url = FileManager.default.homeDirectoryForCurrentUser
+    static var url = FileManager.default.homeDirectoryForCurrentUser
         .appendingPathComponent("Library/Logs/\(folder)/events.log")
     private static let formatter: DateFormatter = {
         let f = DateFormatter()
@@ -93,21 +101,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return
         }
         AX.onAPIDisabled = { [weak self] in
-            DispatchQueue.main.async { self?.updateTrust(AXIsProcessTrusted()) }
+            DispatchQueue.main.async { self?.updateTrust(AX.isTrusted(false)) }
         }
         // Never-active agent: distributed notifications must be delivered immediately, not on activation.
         DistributedNotificationCenter.default().addObserver(
             self, selector: #selector(accessibilityChanged),
             name: Notification.Name("com.apple.accessibility.api"), object: nil,
             suspensionBehavior: .deliverImmediately)
-        updateTrust(AXIsProcessTrustedWithOptions(["AXTrustedCheckOptionPrompt": true] as CFDictionary))
+        updateTrust(AX.isTrusted(true))
     }
 
     /// Accent colour and accessibility display options re-apply to the bars immediately (the bar is always dark).
     private func observeTheme() {
         NotificationCenter.default.addObserver(self, selector: #selector(themeChanged),
                                                name: NSColor.systemColorsDidChangeNotification, object: nil)
-        NSWorkspace.shared.notificationCenter.addObserver(
+        Env.workspace.notificationCenter.addObserver(
             self, selector: #selector(themeChanged),
             name: NSWorkspace.accessibilityDisplayOptionsDidChangeNotification, object: nil)
     }
@@ -116,7 +124,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc private func accessibilityChanged() {
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { [weak self] in
-            self?.updateTrust(AXIsProcessTrusted())
+            self?.updateTrust(AX.isTrusted(false))
         }
     }
 
@@ -143,7 +151,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             if grantPoll == nil {
                 EventLog.write("waiting for accessibility (1 s poll)")
                 let timer = Timer(timeInterval: 1, repeats: true) { [weak self] _ in
-                    if AXIsProcessTrusted() { self?.updateTrust(true) }
+                    if AX.isTrusted(false) { self?.updateTrust(true) }
                 }
                 timer.tolerance = 0.2
                 RunLoop.main.add(timer, forMode: .common)
@@ -155,8 +163,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// Requirement 32: asked once ever, after Accessibility is granted; the request is remembered.
     private func requestScreenRecordingOnce() {
         let key = "screenRecordingRequested"
-        guard !UserDefaults.standard.bool(forKey: key) else { return }
-        UserDefaults.standard.set(true, forKey: key)
+        guard !Env.defaults.bool(forKey: key) else { return }
+        Env.defaults.set(true, forKey: key)
         let granted = CGPreflightScreenCaptureAccess()
         EventLog.write("screen recording \(granted ? "already granted" : "requested")")
         if !granted { CGRequestScreenCaptureAccess() }

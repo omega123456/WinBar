@@ -8,7 +8,7 @@ final class PreviewController {
     private static let cacheLimit = 32
 
     private let tracker: WindowTracker
-    private let panel = PreviewPanel()
+    let panel = PreviewPanel()
     private var shown: CGWindowID?         // window of the visible preview
     private var hovered: CGWindowID?       // last hovered window button
     private var hoverAt: CFTimeInterval = 0, shownAt: CFTimeInterval = 0
@@ -36,7 +36,9 @@ final class PreviewController {
     }
 
     /// Requirement 32: no capture is attempted (and no prompt re-triggered) while this is false.
-    static var hasPermission: Bool { CGPreflightScreenCaptureAccess() }
+    static var hasPermission: Bool { checkPermission() }
+    /// Tests replace this and `captureWindow`: a real check or capture would involve the Screen Recording grant.
+    static var checkPermission = { CGPreflightScreenCaptureAccess() }
 
     // MARK: Hover timing (requirement 24)
 
@@ -107,7 +109,7 @@ final class PreviewController {
         }
         let theme = Theme.current()
         panel.view.set(icon: app.icon, title: w.title.isEmpty ? app.name : w.title, thumb: thumb, theme: theme)
-        let f = (screen ?? NSScreen.screens.first)?.frame ?? .zero
+        let f = (screen ?? Env.screens().first)?.frame ?? .zero
         let x = min(max(anchor.midX - PreviewView.size.width / 2, f.minX + 8), f.maxX - PreviewView.size.width - 8)
         let barTop = f.minY + TaskbarPanel.height
         let target = NSRect(origin: NSPoint(x: x, y: barTop + 8), size: PreviewView.size)
@@ -134,8 +136,13 @@ final class PreviewController {
         guard Self.hasPermission, let w = tracker.windows[id], !w.isMinimized, tracker.apps[w.pid]?.isHidden != true else { return }
         let t0 = CACurrentMediaTime()
         EventLog.write("preview capture start id=\(id)")
+        Self.captureWindow(id) { [weak self] image, error in self?.captured(id, image, error, t0) }
+    }
+
+    /// One-shot ScreenCaptureKit capture of a window at up to 2× the thumbnail size; completes on main.
+    static var captureWindow: (CGWindowID, @escaping (CGImage?, Error?) -> Void) -> Void = { id, done in
         SCShareableContent.getExcludingDesktopWindows(false, onScreenWindowsOnly: true) { content, error in
-            DispatchQueue.main.async { [weak self] in
+            DispatchQueue.main.async {
                 guard let win = content?.windows.first(where: { $0.windowID == id }), win.frame.width > 0, win.frame.height > 0 else {
                     EventLog.write("preview capture failed id=\(id): not shareable \(error.map { "\($0)" } ?? "")")
                     return
@@ -147,7 +154,7 @@ final class PreviewController {
                 config.showsCursor = false
                 config.ignoreShadowsSingleWindow = true
                 SCScreenshotManager.captureImage(contentFilter: SCContentFilter(desktopIndependentWindow: win), configuration: config) { image, error in
-                    DispatchQueue.main.async { self?.captured(id, image, error, t0) }
+                    DispatchQueue.main.async { done(image, error) }
                 }
             }
         }

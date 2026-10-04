@@ -39,7 +39,7 @@ struct Theme: Equatable {
     static let appearance = NSAppearance(named: .darkAqua)!
 
     static func current() -> Theme {
-        let ws = NSWorkspace.shared
+        let ws = Env.workspace
         var t = Theme()
         t.contrast = ws.accessibilityDisplayShouldIncreaseContrast
         t.solid = ws.accessibilityDisplayShouldReduceTransparency
@@ -222,7 +222,7 @@ final class TaskbarPanel: NSPanel {
         let button = ctaButton ?? {
             let b = CTAButton()
             b.apply(theme)
-            b.onPress = { NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility")!) }
+            b.onPress = { Env.workspace.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility")!) }
             root.addSubview(b)
             ctaButton = b
             return b
@@ -332,7 +332,7 @@ enum BarClickTap {
         EventLog.write("bar click tap installed")
     }
 
-    private static let callback: CGEventTapCallBack = { _, type, event, _ in
+    static let callback: CGEventTapCallBack = { _, type, event, _ in
         if type == .tapDisabledByTimeout || type == .tapDisabledByUserInput {
             if let tap { CGEvent.tapEnable(tap: tap, enable: true) }
         } else if route(type, event) {
@@ -343,7 +343,7 @@ enum BarClickTap {
 
     /// true → the event belongs to a bar and was taken. Delivery is async so that a handler never runs
     /// inside the tap callback (a slow one would stall every mouse event until the tap times out).
-    private static func route(_ type: CGEventType, _ cg: CGEvent) -> Bool {
+    static func route(_ type: CGEventType, _ cg: CGEvent) -> Bool {
         switch type {
         case .leftMouseDragged, .leftMouseUp:
             guard let t = target else { return type == .leftMouseUp && swallowUps.remove(type.rawValue) != nil }
@@ -387,7 +387,7 @@ enum BarClickTap {
     /// The bar or hover-preview view under a CG global point, if it is one the tap handles.
     /// The preview is a WinBar window too: a native click on its X would activate WinBar.
     private static func hit(_ location: CGPoint) -> (NSWindow, NSView)? {
-        let p = NSPoint(x: location.x, y: (NSScreen.screens.first?.frame.height ?? 0) - location.y)
+        let p = NSPoint(x: location.x, y: (Env.screens().first?.frame.height ?? 0) - location.y)
         guard let panel = NSApp.windows.first(where: { ($0 is TaskbarPanel || $0 is PreviewPanel) && $0.isVisible && $0.frame.contains(p) }),
               let root = panel.contentView,
               let view = root.hitTest(root.convert(panel.convertPoint(fromScreen: p), from: nil)) else { return nil }
@@ -396,7 +396,7 @@ enum BarClickTap {
     }
 
     private static func deliver(_ type: CGEventType, _ cg: CGEvent, _ panel: NSWindow, _ view: NSView) {
-        let p = panel.convertPoint(fromScreen: NSPoint(x: cg.location.x, y: (NSScreen.screens.first?.frame.height ?? 0) - cg.location.y))
+        let p = panel.convertPoint(fromScreen: NSPoint(x: cg.location.x, y: (Env.screens().first?.frame.height ?? 0) - cg.location.y))
         guard let kind = NSEvent.EventType(rawValue: UInt(type.rawValue)), // mouse event types share raw values
               let e = NSEvent.mouseEvent(with: kind, location: p, modifierFlags: NSEvent.ModifierFlags(rawValue: UInt(cg.flags.rawValue)),
                                          timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: panel.windowNumber,
