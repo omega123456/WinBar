@@ -3,6 +3,7 @@
 # Fails if line coverage is below COVERAGE_MIN (default 90). HTML report: COVERAGE_HTML=1.
 # Same toolchain and scratch path as scripts/test.sh; extra arguments go to `swift test`.
 set -euo pipefail
+trap 'exit 1' ERR # any failing step (tests, llvm-cov) exits 1, same as the coverage gate
 cd "$(dirname "$0")/.."
 export DEVELOPER_DIR="${DEVELOPER_DIR:-/Applications/Xcode.app/Contents/Developer}"
 min="${COVERAGE_MIN:-90}"
