@@ -146,6 +146,7 @@ extension Desktop {
             h.ws.post(NSWorkspace.didActivateApplicationNotification, nil)
             await settle()
             #expect(t.activeWindowID == 5006)
+            h.ws.front = accessory
             h.ws.post(NSWorkspace.didActivateApplicationNotification, accessory)
             await settle()
             #expect(t.activeWindowID == nil)
@@ -155,6 +156,55 @@ extension Desktop {
             #expect(!t.isTracking)
             #expect(t.apps.isEmpty)
             h.ax.post(kAXTitleChangedNotification, w1) // after stop: ignored
+        }
+
+        @Test func screenChangeRereadsWindowsMovedWithoutAnEvent() async {
+            let h = Harness()
+            let a = h.app(91001, "test.alpha")
+            let w = h.window(5001, of: a, "One")
+            let t = WindowTracker()
+            t.start()
+            await settle()
+            #expect(t.windows[5001]?.displayID == 4242)
+
+            // Monitor plugged in: macOS moves the window there without kAXMoved.
+            h.screens = [h.main, h.side]
+            h.setFrame(w, CGRect(x: -18700, y: -19800, width: 200, height: 200))
+            NotificationCenter.default.post(name: NSApplication.didChangeScreenParametersNotification, object: nil)
+            await settle()
+            #expect(t.windows[5001]?.displayID == 4243)
+
+            // Moved again after that first re-read, still without an event: caught by the settled re-read.
+            h.setFrame(w, CGRect(x: -19900, y: -19800, width: 200, height: 200))
+            await settle()
+            #expect(t.windows[5001]?.displayID == 4243)
+            await settle(1)
+            #expect(t.windows[5001]?.displayID == 4242)
+            t.stop()
+        }
+
+        @Test func unlockRescansWindowsDroppedWhileGoingToSleep() async {
+            let h = Harness()
+            let a = h.app(91001, "test.alpha")
+            let w = h.window(5001, of: a, "One")
+            let t = WindowTracker()
+            t.start()
+            await settle()
+            #expect(t.windows[5001]?.isVisible == true)
+
+            // Going to sleep: every window element reads as invalid and nothing is on screen.
+            h.ax.failing[w] = .invalidUIElement
+            h.onScreen = []
+            NotificationCenter.default.post(name: NSApplication.didChangeScreenParametersNotification, object: nil)
+            await settle(1.1)
+            #expect(t.windows[5001] == nil)
+
+            h.ax.failing[w] = nil
+            h.onScreen = [5001]
+            t.screenUnlocked()
+            await settle()
+            #expect(t.windows[5001]?.isVisible == true)
+            t.stop()
         }
 
         @Test func observerRetriesThenWaitsForTheAppsNextEvent() async {

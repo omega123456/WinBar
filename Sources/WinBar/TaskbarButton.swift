@@ -405,9 +405,10 @@ private final class LabelLayer: CALayer {
 extension NSImage {
     /// A 128 px raster for icon layers (set `minificationFilter = .trilinear`). `layerContents(forContentsScale:)`
     /// picks the rep nearest the pixel size, so at 1x it takes the 16/32 px app-icon artwork, which carries a grey
-    /// rim; downscaling the large artwork looks the same at every scale.
+    /// rim; downscaling the large artwork looks the same at every scale. The identity CTM keeps it 128 px: without it,
+    /// a nil context rasterizes at the main screen's scale.
     var iconContents: CGImage? {
         var r = CGRect(x: 0, y: 0, width: 128, height: 128)
-        return cgImage(forProposedRect: &r, context: nil, hints: nil)
+        return cgImage(forProposedRect: &r, context: nil, hints: [.ctm: NSAffineTransform()])
     }
 }

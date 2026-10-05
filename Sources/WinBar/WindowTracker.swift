@@ -138,9 +138,13 @@ final class WindowTracker {
             forName: NSApplication.didChangeScreenParametersNotification, object: nil, queue: .main
         ) { [unowned self] _ in
             EventLog.write("screens changed")
-            refreshOnScreen = true
-            schedule()
+            // Cached frames go stale: they are relative to the primary screen's height, and macOS moves windows onto
+            // the new display set without always posting kAXMoved (monitor unplugged and replugged).
+            rereadWindows()
         })
+        workspaceTokens.append(DistributedNotificationCenter.default().addObserver(
+            forName: Notification.Name("com.apple.screenIsUnlocked"), object: nil, queue: .main
+        ) { [unowned self] _ in screenUnlocked() })
 
         for running in ws.runningApplications { addApp(running) }
         if let pid = ws.frontmostApplication?.processIdentifier { focusPids.insert(pid) }
@@ -150,7 +154,11 @@ final class WindowTracker {
     func stop() {
         guard isTracking else { return }
         isTracking = false
-        workspaceTokens.forEach { Env.workspace.notificationCenter.removeObserver($0); NotificationCenter.default.removeObserver($0) }
+        workspaceTokens.forEach {
+            Env.workspace.notificationCenter.removeObserver($0)
+            NotificationCenter.default.removeObserver($0)
+            DistributedNotificationCenter.default().removeObserver($0)
+        }
         workspaceTokens = []
         for app in apps.values { if let o = app.observer { AX.removeObserver(o) } }
         apps = [:]; windows = [:]; elementIDs = [:]; activeWindowID = nil
@@ -198,6 +206,27 @@ final class WindowTracker {
         } else {
             EventLog.write("observer gave up pid=\(app.pid) \(app.name) (until its next workspace event)")
         }
+    }
+
+    /// Going to sleep (e.g. unplugging a USB-C monitor that powers the Mac), AX reports every window element as
+    /// invalid, so they are all dropped, and the rescans while locked find none (verified on macOS 26). Rescan.
+    func screenUnlocked() {
+        EventLog.write("screen unlocked")
+        rereadWindows()
+    }
+
+    /// Rescans every app and re-reads every window's frame and the on-screen list, now and once macOS has
+    /// finished moving windows.
+    private func rereadWindows() {
+        let reread = { [weak self] in
+            guard let self, isTracking else { return }
+            rescanPids.formUnion(apps.keys)
+            dirtyWindows.formUnion(windows.keys)
+            refreshOnScreen = true
+            schedule()
+        }
+        reread()
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1, execute: reread)
     }
 
     /// A workspace event for an app whose observer gave up restarts the retries.
