@@ -41,9 +41,14 @@ You lose the Dock, but WinBar replaces it anyway.
 
 On macOS 26 the delay only holds on desktop Spaces. The Dock still appears in Mission Control, and on full-screen Spaces when the pointer is pushed against the bottom edge. Neither is configurable. WinBar hides itself on full-screen Spaces, so nothing overlaps there.
 
+```sh
+defaults write com.apple.dock tilesize -int 1 && killall Dock
+```
+With auto-hide on and the tile size that small, Mission Control still reserves the Dock, but it shows up as a hairline instead of a row of icons.
+
 To undo it:
 ```sh
-defaults delete com.apple.dock autohide-delay && killall Dock
+defaults delete com.apple.dock autohide-delay && defaults delete com.apple.dock tilesize && killall Dock
 ```
 Then move the Dock back to the side.
 
