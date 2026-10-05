@@ -263,14 +263,8 @@ final class TaskbarPanel: NSPanel {
         let meX = d.originX[d.from], w = b.frame.width
         let cdx = max(d.originX[0] - meX, min(d.originX[d.keys.count - 1] + last.frame.width - (meX + w), dx))
         b.setFrameOrigin(NSPoint(x: meX + cdx, y: b.frame.minY))
-        let cx = meX + w / 2 + cdx
-        var to = d.from
-        for (i, k) in d.keys.enumerated() where i != d.from {
-            guard let other = buttons[k] else { continue }
-            let mid = d.originX[i] + other.frame.width / 2
-            if i < d.from && cx < mid { to = min(to, i) }
-            if i > d.from && cx > mid { to = max(to, i) }
-        }
+        let to = Self.dropIndex(originX: d.originX, widths: d.keys.map { buttons[$0]?.frame.width ?? 0 },
+                                from: d.from, x: meX + cdx)
         guard to != d.to else { return }
         d.to = to
         drag = d
@@ -291,6 +285,19 @@ final class TaskbarPanel: NSPanel {
                 }
             }
         }
+    }
+
+    /// Slot the dragged button (`from`, now at `x`) drops into: it passes a neighbour once its leading edge
+    /// crosses that neighbour's centre. The leading edge, not the centre: the drag is clamped to the group's
+    /// ends, where the centre can't get past an equal-width or narrower end button.
+    static func dropIndex(originX: [CGFloat], widths: [CGFloat], from: Int, x: CGFloat) -> Int {
+        var to = from
+        for i in originX.indices where i != from {
+            let mid = originX[i] + widths[i] / 2
+            if i < from && x < mid { to = min(to, i) }
+            if i > from && x + widths[from] > mid { to = max(to, i) }
+        }
+        return to
     }
 
     func dragEnded(_ b: TaskbarButton) {

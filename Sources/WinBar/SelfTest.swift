@@ -176,6 +176,16 @@ enum SelfTest {
     private static func pinOrder() {
         check("pin order from first appearance after a drop",
               BarController.pinOrder(dropped: ["b", "a", "b", "c"], pins: ["a", "b", "c", "d"]) == ["b", "a", "c", "d"])
+        // Drag reorder: the drag clamps at the group's ends; dropping in the first/last slot must still be reachable.
+        let drop = TaskbarPanel.dropIndex
+        check("drag: equal widths, second dragged to the left end takes the first slot",
+              drop([0, 100], [100, 100], 1, 0) == 0)
+        check("drag: wider second dragged to the left end takes the first slot",
+              drop([0, 80], [80, 200], 1, 0) == 0)
+        check("drag: equal widths, first dragged to the right end takes the last slot",
+              drop([0, 100], [100, 100], 0, 100) == 1)
+        check("drag: short move stays put", drop([0, 100, 200], [100, 100, 100], 1, 60) == 1)
+        check("drag: passes several neighbours", drop([0, 100, 200], [100, 100, 100], 2, 40) == 0)
     }
 
     // MARK: Signals (requirements 27–29)
