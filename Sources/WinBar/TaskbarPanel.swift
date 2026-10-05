@@ -80,7 +80,7 @@ struct Theme: Equatable {
     var flyoutStroke: CGColor { white(0.09) }
 }
 
-/// One bar: borderless non-activating panel at status-bar level, screen width × 48 pt at the bottom.
+/// One bar: borderless non-activating panel just below main-menu level, screen width × 48 pt at the bottom.
 /// Joins all Spaces but is not full-screen auxiliary, so it stays off full-screen Spaces.
 final class TaskbarPanel: NSPanel {
     static let height: CGFloat = 48
@@ -117,7 +117,8 @@ final class TaskbarPanel: NSPanel {
         super.init(contentRect: Self.frame(for: screen), styleMask: [.borderless, .nonactivatingPanel],
                    backing: .buffered, defer: false)
         self.controller = controller
-        level = .statusBar
+        // Above the Dock (20) and floating windows, below the screenshot thumbnail (24, measured on macOS 26).
+        level = NSWindow.Level(rawValue: NSWindow.Level.mainMenu.rawValue - 1)
         collectionBehavior = [.canJoinAllSpaces, .stationary, .ignoresCycle] // no .fullScreenAuxiliary
         hidesOnDeactivate = false
         isOpaque = false

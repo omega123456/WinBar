@@ -223,7 +223,7 @@ final class PreviewPanel: NSPanel {
 
     init() {
         super.init(contentRect: view.frame, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false) // deferred creation stalls the first slide ~100 ms
-        level = NSWindow.Level(rawValue: NSWindow.Level.statusBar.rawValue + 1)
+        level = NSWindow.Level(rawValue: NSWindow.Level.mainMenu.rawValue)
         collectionBehavior = [.canJoinAllSpaces, .stationary, .ignoresCycle]
         hidesOnDeactivate = false
         isOpaque = false
