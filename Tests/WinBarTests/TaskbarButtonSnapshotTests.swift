@@ -62,9 +62,21 @@ import Testing
         container.backgroundColor = Theme().solidBackground
         container.addSublayer(button.layer!)
         Self.display(container)
-        assertSnapshot(of: container, as: .image(precision: 0.99, perceptualPrecision: 0.98), named: c.rawValue,
-                       testName: "TaskbarButton")
+        assertSnapshot(of: container, as: Self.image2x, named: c.rawValue, testName: "TaskbarButton")
     }
+
+    /// The library's CALayer `.image` renders through `lockFocus`, in the main screen's scale and colour profile, so
+    /// the result depends on the display. Render at a fixed 2x in sRGB instead.
+    private static let image2x = SimplySnapshotting<NSImage>.image(precision: 0.99, perceptualPrecision: 0.98)
+        .pullback { (layer: CALayer) in
+            let size = layer.bounds.size
+            let ctx = CGContext(data: nil, width: Int(size.width * 2), height: Int(size.height * 2), bitsPerComponent: 8,
+                                bytesPerRow: 0, space: CGColorSpace(name: CGColorSpace.sRGB)!,
+                                bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
+            ctx.scaleBy(x: 2, y: 2)
+            layer.render(in: ctx)
+            return NSImage(cgImage: ctx.makeImage()!, size: size)
+        }
 
     /// `render(in:)` draws contents that exist; layers drawn in `draw(in:)` (the label) need a display pass first.
     private static func display(_ layer: CALayer) {

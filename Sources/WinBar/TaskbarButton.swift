@@ -61,6 +61,7 @@ final class TaskbarButton: NSView {
         plate.shadowOffset = CGSize(width: 0, height: -1)
         plate.shadowRadius = 1
         iconLayer.contentsGravity = .resizeAspect
+        iconLayer.minificationFilter = .trilinear
         label.masksToBounds = true // hard clip, no ellipsis
         indicator.cornerRadius = 1.5
         attnPlate.cornerRadius = 4
@@ -135,7 +136,7 @@ final class TaskbarButton: NSView {
     private func setIcon() {
         let scale = window?.backingScaleFactor ?? 2
         iconLayer.contentsScale = scale
-        iconLayer.contents = content.icon.layerContents(forContentsScale: scale)
+        iconLayer.contents = content.icon.iconContents
     }
 
     /// The visible 40 pt plate inside the hit rect (the view's bounds: full bar height, gap / 2 wider each side,
@@ -398,5 +399,15 @@ private final class LabelLayer: CALayer {
             .font: Fonts.label, .foregroundColor: NSColor(cgColor: color) ?? .labelColor]))
         ctx.textPosition = CGPoint(x: 0, y: bounds.height - Fonts.label.ascender) // first-line baseline, as CATextLayer
         CTLineDraw(line, ctx)
+    }
+}
+
+extension NSImage {
+    /// A 128 px raster for icon layers (set `minificationFilter = .trilinear`). `layerContents(forContentsScale:)`
+    /// picks the rep nearest the pixel size, so at 1x it takes the 16/32 px app-icon artwork, which carries a grey
+    /// rim; downscaling the large artwork looks the same at every scale.
+    var iconContents: CGImage? {
+        var r = CGRect(x: 0, y: 0, width: 128, height: 128)
+        return cgImage(forProposedRect: &r, context: nil, hints: nil)
     }
 }

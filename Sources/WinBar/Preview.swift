@@ -292,6 +292,7 @@ final class PreviewView: NSView {
         let headerY = bounds.height - 9 - 24
         iconLayer.frame = CGRect(x: 9, y: headerY + 4, width: 16, height: 16)
         iconLayer.contentsGravity = .resizeAspect
+        iconLayer.minificationFilter = .trilinear
         thumb.frame = CGRect(x: 9, y: 9, width: Self.thumbSize.width, height: Self.thumbSize.height)
         thumb.cornerRadius = 4
         thumb.masksToBounds = true
@@ -300,6 +301,7 @@ final class PreviewView: NSView {
         fallback.cornerRadius = 4
         fallback.opacity = 0.85
         fallbackIcon.contentsGravity = .resizeAspect
+        fallbackIcon.minificationFilter = .trilinear
         fallback.addSublayer(fallbackIcon)
         for l in [chrome, iconLayer, thumb, fallback] { root.addSublayer(l) }
 
@@ -330,7 +332,7 @@ final class PreviewView: NSView {
         fallback.backgroundColor = theme.hover
         appIcon = icon
         iconLayer.contentsScale = scale
-        iconLayer.contents = icon.layerContents(forContentsScale: scale)
+        iconLayer.contents = icon.iconContents
         CATransaction.commit()
         title.stringValue = text
         title.textColor = NSColor(cgColor: theme.text)
@@ -363,7 +365,7 @@ final class PreviewView: NSView {
         let iconY = (fallback.bounds.height - groupH) / 2 + groupH - 64
         fallbackIcon.frame = CGRect(x: (fallback.bounds.width - 64) / 2, y: iconY, width: 64, height: 64)
         fallbackIcon.contentsScale = scale
-        fallbackIcon.contents = appIcon.layerContents(forContentsScale: scale)
+        fallbackIcon.contents = appIcon.iconContents
         fallbackText.frame = NSRect(x: fallback.frame.minX, y: fallback.frame.minY + iconY - 8 - textH,
                                     width: fallback.frame.width, height: textH)
     }
