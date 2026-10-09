@@ -88,6 +88,15 @@ final class TaskbarButton: NSView {
         content = c
         self.theme = theme
         configured = true
+        // Width change: plate, label clip, icon and badge glide with the frame the panel animates.
+        // Setting the same values again below without actions doesn't cancel these animations.
+        if wasConfigured && c.width != old.width && !theme.reduceMotion {
+            CATransaction.begin()
+            CATransaction.setAnimationDuration(TaskbarPanel.resizeDuration)
+            CATransaction.setAnimationTimingFunction(TaskbarPanel.resizeTiming)
+            layoutLayers()
+            CATransaction.commit()
+        }
         Self.noAnimation {
             if !wasConfigured || c.icon !== old.icon { setIcon() }
             if !wasConfigured || c.label != old.label { label.string = c.label }
@@ -388,6 +397,7 @@ private final class LabelLayer: CALayer {
     override init() {
         super.init()
         needsDisplayOnBoundsChange = true
+        contentsGravity = .left // a width animation reveals / clips the text instead of stretching it
     }
     override init(layer: Any) { super.init(layer: layer) }
     required init?(coder: NSCoder) { fatalError() }

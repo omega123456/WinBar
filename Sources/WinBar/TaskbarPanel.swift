@@ -90,6 +90,10 @@ final class TaskbarPanel: NSPanel {
     static let edge: CGFloat = 12, gap: CGFloat = 2, groupGap: CGFloat = 12
     /// Row content is centred in the 47 pt below the 1 pt top border (mockup: border-box bar, centred flex row).
     static let rowMidY: CGFloat = (height - 1) / 2
+    /// Win11 slides buttons to their new place and width (title change, window opened / closed):
+    /// ~300 ms on Fluent's decelerate curve. The panel animates button frames, TaskbarButton its plate.
+    static let resizeDuration = 0.3
+    static var resizeTiming: CAMediaTimingFunction { CAMediaTimingFunction(controlPoints: 0.1, 0.9, 0.2, 1) }
     #if DEBUG
     /// WinBar Dev stamp, drawn by BarBackgroundView at the right end (clicks on it are bar clicks).
     /// Buttons and the call to action stop `edge` before it.
@@ -185,6 +189,7 @@ final class TaskbarPanel: NSPanel {
         }
         var x = Self.edge
         func place(_ c: TaskbarButton.Content) {
+            let isNew = buttons[c.key] == nil
             let b = buttons[c.key] ?? {
                 let b = TaskbarButton()
                 b.controller = controller
@@ -194,7 +199,17 @@ final class TaskbarPanel: NSPanel {
             }()
             b.update(c, theme: theme)
             let f = NSRect(x: x - Self.gap / 2, y: 0, width: c.width + Self.gap, height: Self.height)
-            if b.frame != f { b.frame = f }
+            if b.frame != f {
+                if isNew || theme.reduceMotion {
+                    b.frame = f
+                } else {
+                    NSAnimationContext.runAnimationGroup { ctx in
+                        ctx.duration = Self.resizeDuration
+                        ctx.timingFunction = Self.resizeTiming
+                        b.animator().frame = f
+                    }
+                }
+            }
             x += c.width + Self.gap
         }
         pinned.forEach(place)
