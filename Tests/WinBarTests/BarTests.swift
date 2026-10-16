@@ -121,6 +121,9 @@ extension Desktop {
             bar.themeChanged()
             drag(main.button(.window(5005))!, by: -300)
             #expect(t.windows[5005]!.order < t.windows[5004]!.order)
+            #expect(Env.defaults.stringArray(forKey: WindowTracker.appOrderKey) == ["test.beta"]) // Anon has no bundle ID
+            let savedWindows = Env.defaults.array(forKey: WindowTracker.windowOrderKey) as? [Int] ?? []
+            #expect(savedWindows.count == t.windows.count && savedWindows.firstIndex(of: 5005)! < savedWindows.firstIndex(of: 5004)!)
             h.ws.reduceMotion = false
             bar.reorder(.pinned, [.window(5002), .app("com.apple.Chess"), .overflow, .window(9999)])
             #expect(bar.pins == ["com.apple.TextEdit", "com.apple.Chess", "com.apple.calculator"])

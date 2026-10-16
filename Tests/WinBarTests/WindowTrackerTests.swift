@@ -158,6 +158,23 @@ extension Desktop {
             h.ax.post(kAXTitleChangedNotification, w1) // after stop: ignored
         }
 
+        @Test func launchScanFollowsTheSavedOrder() async {
+            let h = Harness()
+            Env.defaults.set(["test.beta"], forKey: WindowTracker.appOrderKey)
+            Env.defaults.set([5004, 5001, 9999, 5003], forKey: WindowTracker.windowOrderKey) // 9999: closed since
+            let a = h.app(91001, "test.alpha", "Alpha")
+            let b = h.app(91002, "test.beta", "Beta")
+            for id in 5001...5003 { h.window(CGWindowID(id), of: a) }
+            h.window(5004, of: b)
+            h.window(5005, of: b)
+            let t = WindowTracker()
+            t.start()
+            await settle()
+            // Saved windows in their slots (interleaved across apps), then the rest by saved app order.
+            #expect(t.visibleWindows.map(\.id) == [5004, 5001, 5003, 5005, 5002])
+            t.stop()
+        }
+
         @Test func screenChangeRereadsWindowsMovedWithoutAnEvent() async {
             let h = Harness()
             let a = h.app(91001, "test.alpha")
@@ -198,6 +215,8 @@ extension Desktop {
             h.ax.post(kAXWindowCreatedNotification, w3)
             await settle()
             #expect(t.visibleWindows.map(\.id) == [5001, 5002, 5003])
+            // Dragged: Three before One (a drop swaps session-order slots).
+            (t.windows[5001]!.order, t.windows[5003]!.order) = (t.windows[5003]!.order, t.windows[5001]!.order)
 
             // Going to sleep: every window element reads as invalid and nothing is on screen.
             for el in [w, w2, w3] { h.ax.failing[el] = .invalidUIElement }
@@ -210,7 +229,7 @@ extension Desktop {
             h.onScreen = [5001, 5002, 5003]
             t.screenUnlocked()
             await settle()
-            #expect(t.visibleWindows.map(\.id) == [5001, 5002, 5003]) // back in their old slots
+            #expect(t.visibleWindows.map(\.id) == [5003, 5002, 5001]) // back in their dragged slots
             t.stop()
         }
 

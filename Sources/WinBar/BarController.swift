@@ -420,23 +420,29 @@ final class BarController {
         chosen?.handler()
     }
 
-    /// Drop commit (requirement 20): pinned group → pin order from each app's first appearance
-    /// (persisted); window order → the dropped windows take over their own session-order slots.
+    /// Drop commit (requirement 20): the group's app order from each app's first appearance is persisted
+    /// (pins, or the unpinned order the next launch scan uses); the dropped windows take over their own session-order slots,
+    /// and the whole session order is saved for the next WinBar start.
     func reorder(_ group: BarGroup, _ keys: [ItemKey]) {
         let wins = keys.compactMap { key -> TrackedWindow? in
             if case .window(let id) = key { return tracker.windows[id] } else { return nil }
         }
         for (w, order) in zip(wins, wins.map(\.order).sorted()) { w.order = order }
-        if group == .pinned {
-            let apps = keys.compactMap { key -> String? in
-                switch key {
-                case .app(let b): return b
-                case .window(let id): return tracker.windows[id].flatMap { tracker.apps[$0.pid]?.bundleID }
-                case .overflow: return nil
-                }
+        Env.defaults.set(tracker.windows.values.sorted { $0.order < $1.order }.map { Int($0.id) },
+                         forKey: WindowTracker.windowOrderKey)
+        let apps = keys.compactMap { key -> String? in
+            switch key {
+            case .app(let b): return b
+            case .window(let id): return tracker.windows[id].flatMap { tracker.apps[$0.pid]?.bundleID }
+            case .overflow: return nil
             }
+        }
+        if group == .pinned {
             pins = Self.pinOrder(dropped: apps, pins: pins)
             savePins()
+        } else {
+            let saved = Env.defaults.stringArray(forKey: WindowTracker.appOrderKey) ?? []
+            Env.defaults.set(Self.pinOrder(dropped: apps, pins: saved), forKey: WindowTracker.appOrderKey)
         }
         EventLog.write("reordered \(group) \(keys.count) items")
         render()
@@ -517,7 +523,7 @@ final class BarController {
         hasWindow || (started && !running) || elapsed >= launchTimeout
     }
 
-    /// Pin order after a drop in the pinned group: apps by first appearance, then pins not on the bar.
+    /// App order after a drop (pins, or the saved unpinned order): apps by first appearance, then the rest of `pins`.
     static func pinOrder(dropped: [String], pins: [String]) -> [String] {
         var seen = Set<String>()
         let order = dropped.filter { seen.insert($0).inserted }

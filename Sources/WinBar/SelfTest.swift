@@ -188,6 +188,10 @@ enum SelfTest {
     private static func pinOrder() {
         check("pin order from first appearance after a drop",
               BarController.pinOrder(dropped: ["b", "a", "b", "c"], pins: ["a", "b", "c", "d"]) == ["b", "a", "c", "d"])
+        let scan = { (b: String?, late: Bool) in WindowTracker.scanKey(b, late ? .distantFuture : .distantPast, saved: ["b", "a"]) }
+        check("launch scan: saved unpinned order beats launch date", scan("b", true) < scan("a", false))
+        check("launch scan: unsaved and anonymous apps after saved ones, by launch date",
+              scan("a", true) < scan("c", false) && scan(nil, false) < scan("c", true))
         // Drag reorder: the drag clamps at the group's ends; dropping in the first/last slot must still be reachable.
         let drop = TaskbarPanel.dropIndex
         check("drag: equal widths, second dragged to the left end takes the first slot",

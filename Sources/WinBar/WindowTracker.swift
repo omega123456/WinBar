@@ -93,6 +93,11 @@ final class WindowTracker {
     private var workspaceTokens: [NSObjectProtocol] = []
 
     private static let retryDelays: [TimeInterval] = [0.25, 0.5, 1]
+    /// `UserDefaults`: unpinned apps in their last dragged bar order (requirement 20), so it survives a restart.
+    static let appOrderKey = "unpinnedAppOrder"
+    /// `UserDefaults`: window IDs in session order at the last drag. Windows outlive a WinBar restart (not their app's),
+    /// so on the first start they take back their saved slots, and windows not in the list follow them.
+    static let windowOrderKey = "windowOrder"
     private static let appNotifications = [kAXWindowCreatedNotification, kAXFocusedWindowChangedNotification,
                                            kAXApplicationActivatedNotification]
     private static let windowNotifications = [kAXUIElementDestroyedNotification, kAXTitleChangedNotification,
@@ -113,6 +118,10 @@ final class WindowTracker {
         guard !isTracking else { return }
         isTracking = true
         EventLog.write("tracker start")
+        if nextOrder == 0, let saved = Env.defaults.array(forKey: Self.windowOrderKey) as? [Int] {
+            for (i, id) in saved.enumerated() { droppedOrders[CGWindowID(id)] = i }
+            nextOrder = saved.count
+        }
         let ws = Env.workspace
         let nc = ws.notificationCenter
         func on(_ name: Notification.Name, _ body: @escaping (NSRunningApplication?) -> Void) {
@@ -320,8 +329,10 @@ final class WindowTracker {
         for (pid, el) in newElements {
             if let app = apps[pid] { withApp(app) { try addWindow(el, app, created: true) } }
         }
-        // Launch order, then each app's own AX order (requirement 10).
-        for app in rescanPids.compactMap({ apps[$0] }).sorted(by: { $0.launchDate < $1.launchDate }) {
+        // Saved unpinned order, then launch order, then each app's own AX order (requirement 10).
+        let saved = Env.defaults.stringArray(forKey: Self.appOrderKey) ?? []
+        let key = { (a: TrackedApp) in Self.scanKey(a.bundleID, a.launchDate, saved: saved) }
+        for app in rescanPids.compactMap({ apps[$0] }).sorted(by: { key($0) < key($1) }) {
             withApp(app) { try rescan(app) }
         }
         for id in dirtyWindows {
@@ -553,6 +564,11 @@ final class WindowTracker {
     }
 
     // MARK: Pure logic (covered by --self-test)
+
+    /// Rescan order of an app: its index in the saved unpinned order (unsaved apps after all saved ones), then launch date.
+    static func scanKey(_ bundleID: String?, _ launchDate: Date, saved: [String]) -> (Int, Date) {
+        (bundleID.flatMap { saved.firstIndex(of: $0) } ?? saved.count, launchDate)
+    }
 
     /// AX/CG global rect (top-left origin of the primary screen, y down) → Cocoa screen rect (y up).
     static func cocoaRect(fromAX r: CGRect, primaryHeight: CGFloat) -> CGRect {
