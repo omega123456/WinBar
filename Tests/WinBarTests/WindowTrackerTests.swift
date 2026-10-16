@@ -186,24 +186,31 @@ extension Desktop {
         @Test func unlockRescansWindowsDroppedWhileGoingToSleep() async {
             let h = Harness()
             let a = h.app(91001, "test.alpha")
+            let b = h.app(91002, "test.beta")
             let w = h.window(5001, of: a, "One")
+            let w2 = h.window(5002, of: b, "Two")
             let t = WindowTracker()
             t.start()
             await settle()
             #expect(t.windows[5001]?.isVisible == true)
+            // Opened later: session order differs from launch × AX order (5001, 5003, 5002).
+            let w3 = h.window(5003, of: a, "Three")
+            h.ax.post(kAXWindowCreatedNotification, w3)
+            await settle()
+            #expect(t.visibleWindows.map(\.id) == [5001, 5002, 5003])
 
             // Going to sleep: every window element reads as invalid and nothing is on screen.
-            h.ax.failing[w] = .invalidUIElement
+            for el in [w, w2, w3] { h.ax.failing[el] = .invalidUIElement }
             h.onScreen = []
             NotificationCenter.default.post(name: NSApplication.didChangeScreenParametersNotification, object: nil)
             await settle(1.1)
-            #expect(t.windows[5001] == nil)
+            #expect(t.windows.isEmpty)
 
-            h.ax.failing[w] = nil
-            h.onScreen = [5001]
+            h.ax.failing = [:]
+            h.onScreen = [5001, 5002, 5003]
             t.screenUnlocked()
             await settle()
-            #expect(t.windows[5001]?.isVisible == true)
+            #expect(t.visibleWindows.map(\.id) == [5001, 5002, 5003]) // back in their old slots
             t.stop()
         }
 

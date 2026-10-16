@@ -87,6 +87,9 @@ final class WindowTracker {
     private var screens: [(id: CGDirectDisplayID, frame: CGRect, visible: CGRect)] = []
     private var elementIDs: [AXUIElement: CGWindowID] = [:]
     private var nextOrder = 0
+    /// Session order of dropped windows: sleep (e.g. unplugging a USB-C monitor) drops every window, and the
+    /// rescan must put them back in their old slots, not in launch × AX order.
+    private var droppedOrders: [CGWindowID: Int] = [:]
     private var workspaceTokens: [NSObjectProtocol] = []
 
     private static let retryDelays: [TimeInterval] = [0.25, 0.5, 1]
@@ -376,8 +379,9 @@ final class WindowTracker {
               let v = try AX.values(el, [kAXSubroleAttribute] + Self.windowAttributes),
               v[0] as? String == kAXStandardWindowSubrole else { return }
         for n in Self.windowNotifications { try AX.observe(observer, el, n, refcon) }
-        let w = TrackedWindow(id: id, pid: app.pid, element: el, order: nextOrder)
-        nextOrder += 1
+        let order = droppedOrders.removeValue(forKey: id) ?? nextOrder
+        nextOrder = max(nextOrder, order + 1)
+        let w = TrackedWindow(id: id, pid: app.pid, element: el, order: order)
         apply(Array(v.dropFirst()), to: w, isNew: true)
         if id == activeWindowID { w.lastFocused = CFAbsoluteTimeGetCurrent() }
         windows[id] = w
@@ -449,6 +453,7 @@ final class WindowTracker {
 
     private func removeWindow(_ id: CGWindowID) {
         guard let w = windows.removeValue(forKey: id) else { return }
+        droppedOrders[id] = w.order
         elementIDs[w.element] = nil
         dirtyWindows.remove(id)
         if activeWindowID == id { activeWindowID = nil }
