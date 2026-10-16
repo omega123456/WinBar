@@ -20,6 +20,7 @@ enum SelfTest {
         composition()
         fitting()
         pinOrder()
+        launchFeedback()
         menuAnchor()
         badgeMapping()
         downloads()
@@ -163,6 +164,17 @@ enum SelfTest {
         let p = fit([nil, 160, nil, nil], [160, 160], 3 * 44 + 2 * g + gg + 44)
         check("pinned-group overflow: other first, then trailing pinned", p == Fit(pinned: [44, 44, 44], other: [], iconOnly: true, overflow: true))
         check("no items: nothing to fit", fit([], [], 100) == Fit(pinned: [], other: [], iconOnly: false, overflow: false))
+    }
+
+    private static func launchFeedback() {
+        let ended = { BarController.launchEnded(started: $0, running: $1, hasWindow: $2, elapsed: $3) }
+        let t = BarController.launchTimeout
+        check("launch: not started yet keeps the feedback", !ended(false, false, false, 1))
+        check("launch: running without a window keeps the feedback", !ended(true, true, false, t - 1))
+        check("launch: first window ends it", ended(true, true, true, 1))
+        check("launch: exit after starting ends it", ended(true, false, false, 1))
+        check("launch: timeout ends it even while running", ended(true, true, false, t))
+        check("launch: timeout ends it if never started", ended(false, false, false, t))
     }
 
     private static func menuAnchor() {

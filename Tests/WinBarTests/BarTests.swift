@@ -243,6 +243,62 @@ extension Desktop {
             s.stop()
         }
 
+        @Test func launchFeedback() async throws {
+            let h = Harness()
+            Env.defaults.set(["com.apple.Chess", "com.apple.calculator", "com.apple.TextEdit"], forKey: "pinnedBundleIDs")
+            let timeout = BarController.launchTimeout
+            defer { BarController.launchTimeout = timeout }
+            let t = WindowTracker(), s = Signals(), p = PreviewController(tracker: t)
+            t.start()
+            let bar = BarController(tracker: t, signals: s, preview: p)
+            t.onChange = { bar.render() }
+            bar.access = .trusted
+            let main = try #require(panel(on: h.main))
+            let chess = ItemKey.app("com.apple.Chess"), calculator = ItemKey.app("com.apple.calculator")
+            #expect(main.button(chess)?.content.launching == false)
+
+            // Press squishes the pinned icon; the click starts the feedback; a repeat click keeps it.
+            let b = try #require(main.button(chess))
+            let o = b.convert(NSPoint(x: 20, y: 20), to: nil)
+            b.mouseDown(with: mouse(.leftMouseDown, window: o, in: main))
+            b.mouseUp(with: mouse(.leftMouseUp, window: o, in: main))
+            #expect(main.button(chess)?.content.launching == true)
+            #expect(main.button(chess)?.accessibilityLabel() == "Chess, launching")
+            bar.clicked(main.button(chess)!)
+            #expect(h.ws.opened.count == 2)
+
+            // The process starts: an app item, still launching. Its first window ends it: a window button.
+            let app = h.app(91010, "com.apple.Chess", "Chess")
+            h.ws.post(NSWorkspace.didLaunchApplicationNotification, app)
+            await settle()
+            #expect(main.button(chess)?.content.launching == true)
+            h.ax.post(kAXWindowCreatedNotification, h.window(5101, of: app, "Board"))
+            await settle()
+            #expect(main.button(chess) == nil)
+            #expect(main.button(.window(5101)) != nil)
+
+            // A process that exits before any window ends it; the launcher pill fades out.
+            bar.clicked(main.button(calculator)!)
+            let calc = h.app(91011, "com.apple.calculator", "Calculator")
+            h.ws.post(NSWorkspace.didLaunchApplicationNotification, calc)
+            await settle()
+            #expect(main.button(calculator)?.content.launching == true)
+            h.ws.apps.removeAll { $0 === calc }
+            h.ws.post(NSWorkspace.didTerminateApplicationNotification, calc)
+            await settle()
+            #expect(main.button(calculator)?.content.launching == false)
+
+            // No window before the timeout: back to a plain launcher (or app item). Reduce Motion: a still pill.
+            BarController.launchTimeout = 0.2
+            h.ws.reduceMotion = true
+            bar.themeChanged()
+            bar.clicked(main.button(.app("com.apple.TextEdit"))!)
+            #expect(main.button(.app("com.apple.TextEdit"))?.content.launching == true)
+            await settle(0.4)
+            #expect(main.button(.app("com.apple.TextEdit"))?.content.launching == false)
+            t.stop()
+        }
+
         @Test func buttonSignalsAndLift() {
             _ = fontsRegistered
             let b = TaskbarButton()

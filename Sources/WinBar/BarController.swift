@@ -51,6 +51,8 @@ final class BarController {
     private static let pinsKey = "pinnedBundleIDs"
     /// Modal menu tracking; returns when the menu closes. Tests replace it to pick an item without a real menu.
     static var trackMenu: (NSMenu, NSPoint) -> Void = { _ = $0.popUp(positioning: nil, at: $1, in: nil) }
+    /// Launch feedback gives up this long after the click (NN/g's 10 s attention limit). Tests shorten it.
+    static var launchTimeout: TimeInterval = 10
 
     var access = Access.untrusted { didSet { if access != oldValue { render() } } }
     private(set) var pins: [String]
@@ -64,6 +66,8 @@ final class BarController {
     private var dots: NSImage
     private var lastActivated: [pid_t: CFAbsoluteTime] = [:]
     private var installed: [String: (url: URL, name: String, icon: NSImage)] = [:]
+    /// Pinned apps opened from the bar that have no window yet, by bundle ID. `started`: seen running since the click.
+    private var launching: [String: (since: CFAbsoluteTime, started: Bool)] = [:]
     private var tokens: [NSObjectProtocol] = []
 
     init(tracker: WindowTracker, signals: Signals, preview: PreviewController) {
@@ -109,6 +113,12 @@ final class BarController {
             BarWindow(id: $0.id, pid: $0.pid, bundleID: tracker.apps[$0.pid]?.bundleID, displayID: $0.displayID)
         }
         let running = Set(tracker.apps.values.compactMap(\.bundleID))
+        let windowed = Set(windows.compactMap(\.bundleID)), now = CFAbsoluteTimeGetCurrent()
+        for (b, l) in launching {
+            let started = l.started || running.contains(b)
+            launching[b] = Self.launchEnded(started: started, running: running.contains(b), hasWindow: windowed.contains(b),
+                                            elapsed: now - l.since) ? nil : (l.since, started)
+        }
         let rows = panels.map { id, panel in
             panel.apply(theme)
             let items = Self.compose(pins: pins, windows: windows, running: running, display: id,
@@ -210,12 +220,18 @@ final class BarController {
         case .appItem(let b):
             let inst = instances(b).first
             let name = inst?.name ?? appInfo(b)?.name ?? b
-            return .init(item: item, icon: inst?.icon ?? appInfo(b)?.icon ?? NSImage(), label: name, width: Self.slot,
-                         iconOnly: true, voiceOver: "\(name), running, no windows on this display")
+            var c = TaskbarButton.Content(item: item, icon: inst?.icon ?? appInfo(b)?.icon ?? NSImage(), label: name, width: Self.slot,
+                                          iconOnly: true, voiceOver: "\(name), running, no windows on this display")
+            c.launching = launching[b] != nil
+            if c.launching { c.voiceOver = "\(name), launching" }
+            return c
         case .launcher(let b):
-            let info = appInfo(b)
-            return .init(item: item, icon: info?.icon ?? NSImage(), label: info?.name ?? b, width: Self.slot,
-                         iconOnly: true, voiceOver: "\(info?.name ?? b), pinned")
+            let info = appInfo(b), name = info?.name ?? b
+            var c = TaskbarButton.Content(item: item, icon: info?.icon ?? NSImage(), label: name, width: Self.slot,
+                                          iconOnly: true, voiceOver: "\(name), pinned")
+            c.launching = launching[b] != nil
+            if c.launching { c.voiceOver = "\(name), launching" }
+            return c
         }
     }
 
@@ -245,8 +261,20 @@ final class BarController {
             return
         }
         EventLog.write("action open \(bundleID)")
+        if launching[bundleID] == nil { // a repeat click doesn't restart the feedback
+            launching[bundleID] = (CFAbsoluteTimeGetCurrent(), false)
+            DispatchQueue.main.asyncAfter(deadline: .now() + Self.launchTimeout + 0.05) { [weak self] in self?.render() }
+        }
         // Launches, or sends a reopen event to a running app (which normally opens a window).
-        Env.workspace.openApplication(at: url, configuration: NSWorkspace.OpenConfiguration())
+        Env.workspace.openApplication(at: url, configuration: NSWorkspace.OpenConfiguration()) { [weak self] _, error in
+            guard let error else { return }
+            DispatchQueue.main.async {
+                EventLog.write("open \(bundleID) failed: \(error.localizedDescription)")
+                self?.launching[bundleID] = nil
+                self?.render()
+            }
+        }
+        render()
     }
 
     private func setPinned(_ bundleID: String, _ on: Bool) {
@@ -481,6 +509,12 @@ final class BarController {
     /// the bottom is raised to that limit (+2 pt margin) first.
     static func menuLocation(left: CGFloat, bottom: CGFloat, menuHeight: CGFloat, visibleMinY: CGFloat) -> NSPoint {
         NSPoint(x: left, y: max(bottom, visibleMinY + 8) - 5 + menuHeight)
+    }
+
+    /// Launch feedback ends on the app's first window (any display), when the process exits after starting,
+    /// or at the timeout. What shows next follows from the item: a window button, an app item or a launcher.
+    static func launchEnded(started: Bool, running: Bool, hasWindow: Bool, elapsed: TimeInterval) -> Bool {
+        hasWindow || (started && !running) || elapsed >= launchTimeout
     }
 
     /// Pin order after a drop in the pinned group: apps by first appearance, then pins not on the bar.

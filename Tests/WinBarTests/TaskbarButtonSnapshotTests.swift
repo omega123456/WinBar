@@ -8,7 +8,7 @@ import Testing
 @MainActor
 @Suite struct TaskbarButtonSnapshotTests {
     enum Case: String, CaseIterable {
-        case window, windowActive, iconOnly, launcher, appItem
+        case window, windowActive, iconOnly, launcher, appItem, launching, launchingReduceMotion
         case badgeCount, badge99Plus, badgeDot, badgeAlert
         case progress, progressPaused, attention, overflow, longTitle
 
@@ -24,6 +24,10 @@ import Testing
             case .iconOnly: return button(width: BarController.slot, iconOnly: true)
             case .launcher: return button(BarItem(kind: .launcher("x"), group: .pinned), width: BarController.slot, iconOnly: true)
             case .appItem: return button(BarItem(kind: .appItem("x"), group: .pinned), width: BarController.slot, iconOnly: true)
+            case .launching, .launchingReduceMotion:
+                var c = button(BarItem(kind: .launcher("x"), group: .pinned), width: BarController.slot, iconOnly: true)
+                c.launching = true
+                return c
             case .badgeCount: var c = button(); c.badge = .count("3"); return c
             case .badge99Plus: var c = button(); c.badge = .count("99+"); return c
             case .badgeDot: var c = button(); c.badge = .dot; return c
@@ -37,6 +41,12 @@ import Testing
                 return c
             case .longTitle: return button(label: "A very long window title that cannot fit in the button — Safari")
             }
+        }
+
+        var theme: Theme {
+            var t = Theme()
+            t.reduceMotion = self == .launchingReduceMotion // a still 10 pt pill instead of the breathing 6 pt one
+            return t
         }
     }
 
@@ -54,7 +64,7 @@ import Testing
         let content = c.content
         #expect(Fonts.label.fontName == "Selawik-Regular")
         let button = TaskbarButton()
-        button.update(content, theme: Theme())
+        button.update(content, theme: c.theme)
         button.frame = NSRect(x: 0, y: 0, width: content.width + TaskbarPanel.gap, height: TaskbarPanel.height) // as TaskbarPanel.place
 
         let container = CALayer()

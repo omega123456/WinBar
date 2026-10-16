@@ -3,7 +3,7 @@ import AppKit
 /// One taskbar item: window, app item, launcher or overflow ("…"). Layer-backed; layers are
 /// updated property by property and nothing animates while idle.
 /// Layers inside `body`, back to front: plate · attention plate · progress fill · icon · label · indicator · badge.
-/// Only signal animations run (indeterminate sweep, attention pulses), and only while their signal is shown.
+/// Only signal animations run (indeterminate sweep, attention pulses, launch breathing), and only while their signal is shown.
 final class TaskbarButton: NSView {
     struct Content {
         var item: BarItem?             // nil = overflow button
@@ -16,6 +16,7 @@ final class TaskbarButton: NSView {
         var badge: Badge? = nil
         var progress: ProgressState? = nil
         var attention = AttentionState.none
+        var launching = false          // launcher / app item opened from the bar, no window yet
         var key: ItemKey { item?.key ?? .overflow }
     }
 
@@ -46,9 +47,17 @@ final class TaskbarButton: NSView {
     private var isWindow: Bool { if case .window = content.item?.kind { return true } else { return false } }
     private var hasIndicator: Bool {
         guard let kind = content.item?.kind else { return false }
-        if case .launcher = kind { return false }
+        if case .launcher = kind { return content.launching }
         return true
     }
+    private var isPinnedIcon: Bool {
+        switch content.item?.kind {
+        case .launcher, .appItem: true
+        default: false
+        }
+    }
+    /// Fluent "fast out, slow in" (WinUI timing and easing).
+    private static var fluentEnter: CAMediaTimingFunction { CAMediaTimingFunction(controlPoints: 0, 0, 0, 1) }
     private var showsLabel: Bool { isWindow && !content.iconOnly }
 
     init() {
@@ -106,8 +115,7 @@ final class TaskbarButton: NSView {
             if !wasConfigured || c.badge != old.badge || oldTheme != theme { setBadgeImage() }
             refreshSignals()
         }
-        // A button that just became active (incl. a new one) grows its indicator 6 → 16 pt.
-        refreshIndicator(animate: c.active && !old.active && !theme.reduceMotion)
+        refreshIndicator(from: old)
         setAccessibilityLabel(c.voiceOver)
     }
 
@@ -130,7 +138,7 @@ final class TaskbarButton: NSView {
     override func setFrameSize(_ size: NSSize) {
         super.setFrameSize(size)
         Self.noAnimation { layoutLayers() }
-        refreshIndicator(animate: false)
+        refreshIndicator(from: nil)
     }
 
     override func viewDidChangeBackingProperties() {
@@ -162,7 +170,9 @@ final class TaskbarButton: NSView {
         // macOS app icons keep ~10% transparent margin per side (824 of 1024 on the Big Sur grid); Win11 icons fill
         // their 24 px. Drawn at 30 pt, centred on the 24 pt slot, the artwork measures ~24 pt like the reference.
         let drawn = content.item == nil ? size : 30
-        iconLayer.frame = CGRect(x: iconX - (drawn - size) / 2, y: (b.height - drawn) / 2, width: drawn, height: drawn)
+        // Bounds and position, not frame: the press squish scales the icon with a transform.
+        iconLayer.bounds = CGRect(x: 0, y: 0, width: drawn, height: drawn)
+        iconLayer.position = CGPoint(x: iconX + size / 2, y: b.height / 2)
         label.isHidden = !showsLabel
         let lineHeight = ceil(Fonts.label.ascender - Fonts.label.descender + Fonts.label.leading)
         label.frame = CGRect(x: 40, y: floor((b.height - lineHeight) / 2), width: max(0, b.width - 50), height: lineHeight)
@@ -287,19 +297,60 @@ final class TaskbarButton: NSView {
     }
 
     /// 3 pt pill, 1 pt above the bottom edge, centred under the icon (labelled) or the button.
-    /// Running: 6 pt grey. Active: 16 pt accent, grown from 6 pt over 200 ms ease-out.
+    /// Running: 6 pt grey. Active: 16 pt accent, grown from 6 pt over 200 ms ease-out (incl. a new button).
     /// Attention: 16 pt red while flashing or held.
-    private func refreshIndicator(animate: Bool) {
+    /// Launching: 6 pt grey, faded in over 167 ms, then breathing 6 ↔ 10 pt every 1.2 s until the launch ends
+    /// (10 pt and still with Reduce Motion); a launcher whose launch ends without a window fades it out over 167 ms.
+    /// `old` is the content before this update; nil re-lays out without transitions.
+    private func refreshIndicator(from old: Content?) {
         let attention = content.attention != .none
-        let width: CGFloat = content.active || attention ? 16 : 6
+        let wide = content.active || attention
+        let motion = !theme.reduceMotion
+        let width: CGFloat = wide ? 16 : content.launching && !motion ? 10 : 6
         let cx = showsLabel ? 20 : content.width / 2
         let color = attention ? theme.attentionIndicator : content.active ? theme.accent : theme.runIndicator
+        let fadeOut = motion && old?.launching == true && !hasIndicator
         Self.noAnimation {
-            indicator.isHidden = !hasIndicator
             indicator.frame = CGRect(x: cx - width / 2, y: 1, width: width, height: 3)
             indicator.backgroundColor = color
+            if !fadeOut { indicator.opacity = hasIndicator ? 1 : 0 }
         }
-        guard animate, hasIndicator else { return }
+        if fadeOut {
+            CATransaction.begin()
+            CATransaction.setAnimationDuration(0.167)
+            indicator.opacity = 0
+            CATransaction.commit()
+        }
+
+        let appear = motion && content.launching && old?.launching == false
+        if appear {
+            let grow = CABasicAnimation(keyPath: "bounds.size.width")
+            grow.fromValue = 0
+            let fade = CABasicAnimation(keyPath: "opacity")
+            fade.fromValue = 0
+            let group = CAAnimationGroup()
+            group.animations = [grow, fade]
+            group.duration = 0.167
+            group.timingFunction = Self.fluentEnter
+            indicator.add(group, forKey: "appear")
+        }
+        if motion && content.launching && !wide {
+            if indicator.animation(forKey: "breathe") == nil {
+                let breathe = CABasicAnimation(keyPath: "bounds.size.width")
+                breathe.fromValue = 6
+                breathe.toValue = 10
+                breathe.duration = 0.6
+                breathe.autoreverses = true
+                breathe.repeatCount = .infinity
+                breathe.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+                breathe.beginTime = CACurrentMediaTime() + (appear ? 0.167 : 0)
+                indicator.add(breathe, forKey: "breathe")
+            }
+        } else {
+            indicator.removeAnimation(forKey: "breathe")
+        }
+
+        guard let old, motion, content.active, !old.active, hasIndicator else { return }
         let grow = CABasicAnimation(keyPath: "bounds.size.width")
         grow.fromValue = 6
         grow.toValue = 16
@@ -311,6 +362,17 @@ final class TaskbarButton: NSView {
         group.duration = 0.2
         group.timingFunction = CAMediaTimingFunction(name: .easeOut)
         indicator.add(group, forKey: "grow")
+    }
+
+    /// Pinned icons (launcher, app item) squish to 0.9 while pressed: 83 ms ease-out down, 167 ms back.
+    private func squish(_ down: Bool) {
+        guard !down || (isPinnedIcon && !theme.reduceMotion) else { return }
+        CATransaction.begin()
+        CATransaction.setAnimationDuration(down ? 0.083 : 0.167)
+        CATransaction.setAnimationTimingFunction(down ? CAMediaTimingFunction(name: .easeOut) : Self.fluentEnter)
+        CATransaction.setDisableActions(theme.reduceMotion)
+        iconLayer.transform = down ? CATransform3DMakeScale(0.9, 0.9, 1) : CATransform3DIdentity
+        CATransaction.commit()
     }
 
     private static func noAnimation(_ body: () -> Void) {
@@ -340,6 +402,7 @@ final class TaskbarButton: NSView {
         dragging = false
         downX = event.locationInWindow.x
         refreshPlate()
+        squish(true)
     }
 
     override func mouseDragged(with event: NSEvent) {
@@ -350,6 +413,7 @@ final class TaskbarButton: NSView {
             dragging = true
             pressed = false
             refreshPlate()
+            squish(false)
             panel.dragBegan(self)
         }
         panel.dragMoved(self, dx: dx)
@@ -358,6 +422,7 @@ final class TaskbarButton: NSView {
     override func mouseUp(with event: NSEvent) {
         pressed = false
         refreshPlate()
+        squish(false)
         if dragging {
             dragging = false
             (window as? TaskbarPanel)?.dragEnded(self)
