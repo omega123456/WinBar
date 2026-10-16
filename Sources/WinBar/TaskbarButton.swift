@@ -161,7 +161,6 @@ final class TaskbarButton: NSView {
         let iconX = showsLabel ? 8 : floor((b.width - size) / 2)
         // macOS app icons keep ~10% transparent margin per side (824 of 1024 on the Big Sur grid); Win11 icons fill
         // their 24 px. Drawn at 30 pt, centred on the 24 pt slot, the artwork measures ~24 pt like the reference.
-        // ponytail: full-bleed (pre-Big Sur style) icons come out ~25% larger; trim alpha bounds if that bothers.
         let drawn = content.item == nil ? size : 30
         iconLayer.frame = CGRect(x: iconX - (drawn - size) / 2, y: (b.height - drawn) / 2, width: drawn, height: drawn)
         label.isHidden = !showsLabel

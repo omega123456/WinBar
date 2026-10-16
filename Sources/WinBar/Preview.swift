@@ -228,7 +228,7 @@ final class PreviewPanel: NSPanel {
         hidesOnDeactivate = false
         isOpaque = false
         backgroundColor = .clear
-        hasShadow = true // ponytail: system window shadow, not the exact 0/8/32 16% (needs a transparent margin over the bar)
+        hasShadow = true
         isReleasedWhenClosed = false
         animationBehavior = .none
         let root = NSView(frame: view.frame)

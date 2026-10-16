@@ -574,7 +574,6 @@ final class WindowTracker {
     /// macOS gives no API to reserve screen space, so maximize, Fill, tiling and edge-snapped resizes all reach the
     /// visible frame's bottom, under the bar. A window whose bottom edge sits exactly there is shrunk to end at the
     /// bar's top edge; nil → leave it alone (dragged elsewhere, too short, or covering the whole screen).
-    /// ponytail: re-clicking the green button re-maximizes instead of restoring (the app no longer sees it as zoomed).
     static func clampedAboveBar(_ frame: CGRect, screen: CGRect, visible: CGRect, barHeight: CGFloat) -> CGRect? {
         let barTop = screen.minY + barHeight
         guard frame != screen, abs(frame.minY - visible.minY) < 1, frame.minY < barTop, frame.maxY > barTop + barHeight else { return nil }
