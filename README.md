@@ -4,6 +4,12 @@ A Windows 11 taskbar ("Combine taskbar buttons: Never") for macOS 26, Apple Sili
 
 Requirements: Swift 6.3 Command Line Tools (Xcode is not needed) and the macOS 26 SDK.
 
+
+
+https://github.com/user-attachments/assets/3a714b9c-d68d-4ba1-b83e-bbfac7d62a77
+
+
+
 ## One-time setup (per Mac)
 
 1. **Move the Dock out of the way.** In System Settings → Desktop & Dock, set "Position on screen" to **Left** or **Right** and turn on **Automatically hide and show the Dock**. The bottom edge of every display belongs to WinBar. An auto-hidden Dock at the bottom would slide over the bar. The one exception is the "never appears" setup in [Optional: minimize toward the bar](#optional-minimize-toward-the-bar).
