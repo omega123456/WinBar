@@ -92,7 +92,9 @@ final class WindowTracker {
     private var droppedOrders: [CGWindowID: Int] = [:]
     private var workspaceTokens: [NSObjectProtocol] = []
 
-    private static let retryDelays: [TimeInterval] = [0.25, 0.5, 1]
+    /// Gemini (verified on macOS 26) refuses the observer for ~2.5 s after launch while already frontmost, so no
+    /// workspace event follows to restart the retries: they must outlast slow launches on their own.
+    private static let retryDelays: [TimeInterval] = [0.25, 0.5, 1, 2, 4]
     /// `UserDefaults`: unpinned apps in their last dragged bar order (requirement 20), so it survives a restart.
     static let appOrderKey = "unpinnedAppOrder"
     /// `UserDefaults`: window IDs in session order at the last drag. Windows outlive a WinBar restart (not their app's),
@@ -190,7 +192,7 @@ final class WindowTracker {
         attach(app)
     }
 
-    /// Registers app-level notifications; one-shot retries at 0.25 / 0.5 / 1 s, then waits for the
+    /// Registers app-level notifications; one-shot retries at 0.25 / 0.5 / 1 / 2 / 4 s, then waits for the
     /// app's next workspace event. On success the app's windows are (re)scanned.
     private func attach(_ app: TrackedApp) {
         guard isTracking, apps[app.pid] === app, !app.observing else { return }

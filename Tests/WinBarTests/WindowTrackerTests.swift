@@ -242,7 +242,10 @@ extension Desktop {
             h.ax.noObserver.insert(b.pid)
             let t = WindowTracker()
             t.start()
-            await settle(2)
+            await settle(4)
+            #expect(h.log.contains("observer retry 4 in 2.0s pid=91001")) // still retrying past the old 1.75 s cutoff
+            #expect(!h.log.contains("observer gave up"))
+            await settle(4.5)
             #expect(h.log.contains("observer gave up pid=91001"))
             #expect(h.log.contains("observer gave up pid=91002"))
             #expect(t.windows.isEmpty)
